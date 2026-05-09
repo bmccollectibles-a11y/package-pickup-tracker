@@ -115,9 +115,18 @@ input:focus {
   background: var(--accent-dark);
 }
 
-.primary:disabled {
+.primary:disabled,
+.secondary:disabled {
   cursor: wait;
   opacity: 0.65;
+}
+
+.header-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .summary-grid {
@@ -253,6 +262,43 @@ tr:last-child td {
   cursor: pointer;
   padding: 9px 12px;
   font-weight: 800;
+}
+
+.danger {
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--bad);
+  cursor: pointer;
+  padding: 9px 12px;
+  font-weight: 800;
+}
+
+.compact {
+  padding: 7px 9px;
+  font-size: 13px;
+}
+
+.row-actions,
+.edit-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.row-actions {
+  margin-top: 8px;
+}
+
+.edit-row {
+  margin-top: 8px;
+}
+
+.description-input {
+  min-width: 220px;
+  max-width: 360px;
+  padding: 8px 10px;
 }
 
 .empty {

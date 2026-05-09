@@ -1,10 +1,12 @@
 const rows = document.querySelector("#packageRows");
 const addForm = document.querySelector("#addForm");
 const refreshButton = document.querySelector("#refreshButton");
+const notifyButton = document.querySelector("#notifyButton");
 const statusMessage = document.querySelector("#statusMessage");
 const tabs = [...document.querySelectorAll(".tab")];
 let packages = [];
 let filter = "needs_pickup";
+let editingId = null;
 
 function setMessage(message, isError = false) {
   statusMessage.textContent = message;
@@ -67,10 +69,7 @@ function render() {
   for (const pkg of visible) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>
-        <span class="tracking">${pkg.trackingNumber}</span>
-        ${pkg.description ? `<span class="note">${pkg.description}</span>` : ""}
-      </td>
+      <td>${trackingMarkup(pkg)}</td>
       <td><span class="pill ${pkg.status}">${statusLabel(pkg.status)}</span></td>
       <td>${pkg.carrierStatus || ""}</td>
       <td>${fmtDate(pkg.lastCheckedAt)}</td>
@@ -80,15 +79,68 @@ function render() {
   }
 }
 
+function trackingMarkup(pkg) {
+  if (editingId === pkg.id) {
+    return `
+      <span class="tracking">${pkg.trackingNumber}</span>
+      <div class="edit-row">
+        <input class="description-input" data-description-input="${pkg.id}" value="${escapeAttr(pkg.description || "")}" placeholder="Description">
+        <button class="secondary compact" data-save-description="${pkg.id}">Save</button>
+        <button class="secondary compact" data-cancel-edit="${pkg.id}">Cancel</button>
+      </div>
+    `;
+  }
+
+  return `
+    <span class="tracking">${pkg.trackingNumber}</span>
+    ${pkg.description ? `<span class="note">${escapeHtml(pkg.description)}</span>` : ""}
+  `;
+}
+
 function actionMarkup(pkg) {
+  const commonActions = `
+    <div class="row-actions">
+      <button class="secondary compact" data-edit-description="${pkg.id}">Edit</button>
+      <button class="danger compact" data-delete-package="${pkg.id}">Delete</button>
+    </div>
+  `;
+
   if (pkg.pickedUpAt) {
     return `
       <span class="note action-note">Picked up ${fmtDate(pkg.pickedUpAt)}</span>
       <button class="secondary" data-unpickup="${pkg.id}">Mark not picked up</button>
+      ${commonActions}
     `;
   }
 
-  return `<button class="secondary" data-pickup="${pkg.id}">Mark picked up</button>`;
+  return `
+    <button class="secondary" data-pickup="${pkg.id}">Mark picked up</button>
+    ${commonActions}
+  `;
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value).replaceAll("`", "&#96;");
+}
+
+function notificationMessage(payload) {
+  const readyCount = payload.notifiedReadyForPickup?.length || 0;
+  const sent = payload.notifications?.filter((item) => item.sent).map((item) => item.sent) || [];
+  const errors = payload.notifications?.filter((item) => item.error) || [];
+
+  if (!readyCount) return "No packages are currently ready for pickup.";
+  if (sent.includes("email")) return `Email sent for ${readyCount} ready package${readyCount === 1 ? "" : "s"}.`;
+  if (errors.length) return `Email failed for ${readyCount} ready package${readyCount === 1 ? "" : "s"}.`;
+  return `${readyCount} package${readyCount === 1 ? " is" : "s are"} ready for pickup, but email is not configured.`;
 }
 
 async function loadPackages() {
@@ -123,7 +175,11 @@ refreshButton.addEventListener("click", async () => {
     const payload = await api("/api/refresh", { method: "POST" });
     packages = payload.packages;
     const errorText = payload.errors.length ? ` ${payload.errors.length} check failed.` : "";
-    setMessage(`Refresh complete. ${payload.newlyArrived.length} newly ready for pickup.${errorText}`, Boolean(payload.errors.length));
+    const emailMessage = notificationMessage(payload);
+    setMessage(
+      `Refresh complete. ${payload.newlyArrived.length} newly ready. ${emailMessage}${errorText}`,
+      Boolean(payload.errors.length || payload.notifications?.some((item) => item.error))
+    );
     render();
   } catch (error) {
     setMessage(error.message, true);
@@ -132,7 +188,75 @@ refreshButton.addEventListener("click", async () => {
   }
 });
 
+notifyButton.addEventListener("click", async () => {
+  notifyButton.disabled = true;
+  setMessage("Sending pickup email...");
+  try {
+    const payload = await api("/api/notify", { method: "POST" });
+    packages = payload.packages;
+    const emailMessage = notificationMessage(payload);
+    setMessage(emailMessage, payload.notifications?.some((item) => item.error));
+    render();
+  } catch (error) {
+    setMessage(error.message, true);
+  } finally {
+    notifyButton.disabled = false;
+  }
+});
+
 rows.addEventListener("click", async (event) => {
+  const editButton = event.target.closest("[data-edit-description]");
+  if (editButton) {
+    editingId = editButton.dataset.editDescription;
+    render();
+    rows.querySelector(`[data-description-input="${editingId}"]`)?.focus();
+    return;
+  }
+
+  const cancelButton = event.target.closest("[data-cancel-edit]");
+  if (cancelButton) {
+    editingId = null;
+    render();
+    return;
+  }
+
+  const saveButton = event.target.closest("[data-save-description]");
+  if (saveButton) {
+    saveButton.disabled = true;
+    const id = saveButton.dataset.saveDescription;
+    const input = rows.querySelector(`[data-description-input="${id}"]`);
+    try {
+      await api(`/api/packages/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ description: input?.value || "" })
+      });
+      editingId = null;
+      setMessage("Description updated.");
+      await loadPackages();
+    } catch (error) {
+      setMessage(error.message, true);
+      saveButton.disabled = false;
+    }
+    return;
+  }
+
+  const deleteButton = event.target.closest("[data-delete-package]");
+  if (deleteButton) {
+    const id = deleteButton.dataset.deletePackage;
+    const pkg = packages.find((item) => item.id === id);
+    if (!window.confirm(`Delete tracking number ${pkg?.trackingNumber || ""}?`)) return;
+    deleteButton.disabled = true;
+    try {
+      await api(`/api/packages/${id}`, { method: "DELETE" });
+      setMessage("Package deleted.");
+      await loadPackages();
+    } catch (error) {
+      setMessage(error.message, true);
+      deleteButton.disabled = false;
+    }
+    return;
+  }
+
   const button = event.target.closest("[data-pickup], [data-unpickup]");
   if (!button) return;
   button.disabled = true;

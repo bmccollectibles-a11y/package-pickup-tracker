@@ -7,14 +7,15 @@ import { createRequire } from "node:module";
 
 const root = resolve(".");
 const publicDir = join(root, "public");
-const dataDir = join(root, "data");
+const dataDir = resolve(process.env.DATA_DIR || join(root, "data"));
 const dataFile = join(dataDir, "packages.json");
 const port = Number(process.env.PORT || 3000);
 const checkIntervalHours = Number(process.env.CHECK_INTERVAL_HOURS || 24);
 const checkerMode = (process.env.TRACKER_MODE || "scrape").toLowerCase();
 const scraperEngine = (process.env.UPS_SCRAPER_ENGINE || "browser").toLowerCase();
 const chromeExecutablePath =
-  process.env.CHROME_EXECUTABLE_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+  process.env.CHROME_EXECUTABLE_PATH ||
+  (process.platform === "darwin" ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" : "");
 const scrapeUrlTemplate =
   process.env.UPS_SCRAPE_URL_TEMPLATE ||
   "https://www.ups.com/track?loc=en_US&tracknum={trackingNumber}&requester=ST/trackdetails";
@@ -308,11 +309,13 @@ async function scrapeUpsTrackingNumber(trackingNumber) {
 
 async function scrapeUpsTrackingNumberWithBrowser(trackingNumber) {
   const { chromium } = loadPlaywright();
-  const browser = await chromium.launch({
+  const launchOptions = {
     headless: true,
-    executablePath: chromeExecutablePath,
     args: ["--disable-http2", "--disable-blink-features=AutomationControlled"]
-  });
+  };
+  if (chromeExecutablePath) launchOptions.executablePath = chromeExecutablePath;
+
+  const browser = await chromium.launch(launchOptions);
 
   try {
     const page = await browser.newPage({
@@ -500,6 +503,7 @@ async function refreshPackages() {
     if (pkg.pickedUpAt) continue;
     try {
       const result = await checkTrackingNumber(pkg.trackingNumber, token);
+      const wasNewArrival = result.status === "arrived" && !pkg.arrivedAt;
       pkg.status = result.status;
       pkg.carrierStatus = result.carrierStatus;
       pkg.lastCheckedAt = now;
@@ -508,7 +512,7 @@ async function refreshPackages() {
         pkg.arrivedAt = now;
       }
 
-      if (result.status === "arrived" && !pkg.arrivedAt) {
+      if (wasNewArrival) {
         newlyArrived.push(pkg);
       }
     } catch (error) {
@@ -533,6 +537,26 @@ async function refreshPackages() {
     newlyArrived: newlyArrived.map(publicPackage),
     notifiedReadyForPickup: readyForPickup.map(publicPackage),
     errors,
+    notifications: notificationResults,
+    packages: packages.map(publicPackage)
+  };
+}
+
+async function notifyReadyForPickup() {
+  const packages = await loadPackages();
+  const now = new Date().toISOString();
+  const readyForPickup = packages.filter((pkg) => pkg.status === "arrived" && !pkg.pickedUpAt);
+  const notificationResults = await notifyArrivals(readyForPickup);
+
+  if (notificationResults.some((result) => result.sent)) {
+    for (const pkg of readyForPickup) {
+      pkg.notificationSentAt = now;
+    }
+    await savePackages(packages);
+  }
+
+  return {
+    notifiedReadyForPickup: readyForPickup.map(publicPackage),
     notifications: notificationResults,
     packages: packages.map(publicPackage)
   };
@@ -566,6 +590,38 @@ async function handleApi(req, res, pathname) {
 
   if (req.method === "POST" && pathname === "/api/refresh") {
     sendJson(res, 200, await refreshPackages());
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/notify") {
+    sendJson(res, 200, await notifyReadyForPickup());
+    return;
+  }
+
+  const packageMatch = pathname.match(/^\/api\/packages\/([^/]+)$/);
+  if (req.method === "PATCH" && packageMatch) {
+    const body = await readJson(req);
+    const packages = await loadPackages();
+    const pkg = packages.find((item) => item.id === packageMatch[1]);
+    if (!pkg) {
+      sendJson(res, 404, { error: "Package not found." });
+      return;
+    }
+    pkg.description = String(body.description || "").trim();
+    await savePackages(packages);
+    sendJson(res, 200, { package: publicPackage(pkg) });
+    return;
+  }
+
+  if (req.method === "DELETE" && packageMatch) {
+    const packages = await loadPackages();
+    const nextPackages = packages.filter((item) => item.id !== packageMatch[1]);
+    if (nextPackages.length === packages.length) {
+      sendJson(res, 404, { error: "Package not found." });
+      return;
+    }
+    await savePackages(nextPackages);
+    sendJson(res, 200, { deleted: true });
     return;
   }
 
