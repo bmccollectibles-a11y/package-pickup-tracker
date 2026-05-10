@@ -13,6 +13,8 @@ const port = Number(process.env.PORT || 3000);
 const checkIntervalHours = Number(process.env.CHECK_INTERVAL_HOURS || 24);
 const checkerMode = (process.env.TRACKER_MODE || "scrape").toLowerCase();
 const scraperEngine = (process.env.UPS_SCRAPER_ENGINE || "browser").toLowerCase();
+const browserConcurrency = Number(process.env.UPS_BROWSER_CONCURRENCY || 3);
+const browserStatusTimeoutMs = Number(process.env.UPS_STATUS_TIMEOUT_MS || 12000);
 const chromeExecutablePath =
   process.env.CHROME_EXECUTABLE_PATH ||
   (process.platform === "darwin" ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" : "");
@@ -255,6 +257,50 @@ function loadPlaywright() {
   }
 }
 
+function browserLaunchOptions() {
+  const launchOptions = {
+    headless: true,
+    args: ["--disable-http2", "--disable-blink-features=AutomationControlled"]
+  };
+  if (chromeExecutablePath) launchOptions.executablePath = chromeExecutablePath;
+  return launchOptions;
+}
+
+async function readRenderedTrackingStatus(page, trackingNumber) {
+  const url = scrapeUrlTemplate.replace("{trackingNumber}", encodeURIComponent(trackingNumber));
+  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+
+  const startedAt = Date.now();
+  let lastError = null;
+  while (Date.now() - startedAt < browserStatusTimeoutMs) {
+    const text = await page.locator("body").innerText({ timeout: 5000 });
+    try {
+      return interpretScrapedTracking(text);
+    } catch (error) {
+      lastError = error;
+      await page.waitForTimeout(750);
+    }
+  }
+
+  throw lastError || new Error("Could not read a UPS status from the tracking page.");
+}
+
+async function mapWithConcurrency(items, limit, worker) {
+  const results = new Array(items.length);
+  let index = 0;
+
+  async function runNext() {
+    while (index < items.length) {
+      const currentIndex = index;
+      index += 1;
+      results[currentIndex] = await worker(items[currentIndex], currentIndex);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, runNext));
+  return results;
+}
+
 async function checkUpsTrackingNumber(trackingNumber, token) {
   const url = new URL(`${upsBaseUrl()}/api/track/v1/details/${encodeURIComponent(trackingNumber)}`);
   url.searchParams.set("locale", "en_US");
@@ -309,24 +355,39 @@ async function scrapeUpsTrackingNumber(trackingNumber) {
 
 async function scrapeUpsTrackingNumberWithBrowser(trackingNumber) {
   const { chromium } = loadPlaywright();
-  const launchOptions = {
-    headless: true,
-    args: ["--disable-http2", "--disable-blink-features=AutomationControlled"]
-  };
-  if (chromeExecutablePath) launchOptions.executablePath = chromeExecutablePath;
-
-  const browser = await chromium.launch(launchOptions);
+  const browser = await chromium.launch(browserLaunchOptions());
 
   try {
     const page = await browser.newPage({
       userAgent:
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     });
-    const url = scrapeUrlTemplate.replace("{trackingNumber}", encodeURIComponent(trackingNumber));
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
-    await page.waitForTimeout(10000);
-    const text = await page.locator("body").innerText({ timeout: 10000 });
-    return interpretScrapedTracking(text);
+    return readRenderedTrackingStatus(page, trackingNumber);
+  } finally {
+    await browser.close();
+  }
+}
+
+async function checkTrackingNumbersWithSharedBrowser(trackingNumbers) {
+  const { chromium } = loadPlaywright();
+  const browser = await chromium.launch(browserLaunchOptions());
+
+  try {
+    const checked = await mapWithConcurrency(trackingNumbers, browserConcurrency, async (trackingNumber) => {
+      const page = await browser.newPage({
+        userAgent:
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+      });
+      try {
+        return { trackingNumber, result: await readRenderedTrackingStatus(page, trackingNumber) };
+      } catch (error) {
+        return { trackingNumber, error };
+      } finally {
+        await page.close().catch(() => {});
+      }
+    });
+
+    return new Map(checked.map((item) => [item.trackingNumber, item]));
   } finally {
     await browser.close();
   }
@@ -498,11 +559,21 @@ async function refreshPackages() {
   const now = new Date().toISOString();
   const newlyArrived = [];
   const errors = [];
+  const activePackages = packages.filter((pkg) => !pkg.pickedUpAt);
+  const browserBatchResults =
+    checkerMode === "scrape" && scraperEngine === "browser"
+      ? await checkTrackingNumbersWithSharedBrowser(
+          activePackages
+            .map((pkg) => pkg.trackingNumber)
+            .filter((trackingNumber) => !trackingNumber.startsWith("TESTDELIVERED") && !trackingNumber.startsWith("TESTTRANSIT"))
+        )
+      : null;
 
-  for (const pkg of packages) {
-    if (pkg.pickedUpAt) continue;
+  for (const pkg of activePackages) {
     try {
-      const result = await checkTrackingNumber(pkg.trackingNumber, token);
+      const browserBatchResult = browserBatchResults?.get(pkg.trackingNumber);
+      if (browserBatchResult?.error) throw browserBatchResult.error;
+      const result = browserBatchResult?.result || (await checkTrackingNumber(pkg.trackingNumber, token));
       const wasNewArrival = result.status === "arrived" && !pkg.arrivedAt;
       pkg.status = result.status;
       pkg.carrierStatus = result.carrierStatus;

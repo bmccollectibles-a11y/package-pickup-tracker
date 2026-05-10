@@ -17,9 +17,11 @@ The default mode is public UPS page scraping, so it does not require a UPS accou
 ```bash
 TRACKER_MODE=scrape
 UPS_SCRAPER_ENGINE=browser
+UPS_BROWSER_CONCURRENCY=3
+UPS_STATUS_TIMEOUT_MS=12000
 ```
 
-Browser scraping uses installed Chrome so UPS can render the tracking status before the app reads it.
+Browser scraping uses Chrome so UPS can render the tracking status before the app reads it. Refreshes reuse one browser and check up to `UPS_BROWSER_CONCURRENCY` packages at once.
 
 If UPS blocks or changes the public page, the app will mark that package as `Check failed` with the error text. You can still switch to the official UPS API later:
 
