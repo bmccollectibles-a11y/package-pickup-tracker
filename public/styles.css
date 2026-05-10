@@ -29,6 +29,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -201,6 +202,7 @@ label {
 }
 
 textarea,
+select,
 input {
   width: 100%;
   border: 1px solid #cdd5c9;
@@ -211,6 +213,7 @@ input {
 }
 
 textarea:focus,
+select:focus,
 input:focus {
   outline: 3px solid rgba(15, 118, 110, 0.18);
   border-color: var(--accent);
@@ -218,7 +221,7 @@ input:focus {
 
 .form-row {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(140px, 180px) 1fr auto;
   gap: 12px;
   margin-top: 12px;
 }
@@ -436,7 +439,8 @@ tr:last-child td {
   margin-top: 8px;
 }
 
-.description-input {
+.description-input,
+.carrier-input {
   min-width: 220px;
   max-width: 360px;
   padding: 8px 10px;
@@ -620,6 +624,11 @@ tr:last-child td {
   }
 
   .description-input {
+    min-width: 0;
+    max-width: none;
+  }
+
+  .carrier-input {
     min-width: 0;
     max-width: none;
   }

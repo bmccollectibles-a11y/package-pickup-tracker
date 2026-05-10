@@ -20,7 +20,7 @@ SHIPPO_CARRIER=ups
 SHIPPO_TIMEOUT_MS=20000
 ```
 
-`SHIPPO_CARRIER` defaults to `ups`, but can be changed to another Shippo carrier token such as `fedex` when needed. Shippo test keys work with Shippo mock tracking numbers such as `SHIPPO_DELIVERED` and `SHIPPO_TRANSIT`.
+Each package can be saved with Auto carrier, UPS, FedEx, or USPS. Auto carrier detects common UPS, USPS, and FedEx tracking number formats, then falls back to `SHIPPO_CARRIER` when the format is ambiguous. Shippo test keys work with Shippo mock tracking numbers such as `SHIPPO_DELIVERED` and `SHIPPO_TRANSIT`.
 
 The app stores carrier ETA when Shippo provides it and detects `out_for_delivery` substatus when available.
 
@@ -29,6 +29,7 @@ The app stores carrier ETA when Shippo provides it and detects `out_for_delivery
 These fake prefixes let you test the workflow without calling Shippo:
 
 - `TESTDELIVERED123` becomes ready for pickup.
+- `TESTOUTFORDELIVERY123` becomes out for delivery.
 - `TESTTRANSIT123` stays in transit.
 
 ## Notifications

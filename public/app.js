@@ -77,6 +77,15 @@ function statusLabel(status) {
   }[status] || status;
 }
 
+function carrierLabel(carrier) {
+  return {
+    auto: "Auto carrier",
+    ups: "UPS",
+    fedex: "FedEx",
+    usps: "USPS"
+  }[carrier] || carrier || "Auto carrier";
+}
+
 function etaSortValue(pkg) {
   if (!pkg.eta) return Number.MAX_SAFE_INTEGER;
   const time = new Date(pkg.eta).getTime();
@@ -174,6 +183,9 @@ function trackingMarkup(pkg) {
       <span class="tracking">${pkg.trackingNumber}</span>
       <div class="edit-row">
         <input class="description-input" data-description-input="${pkg.id}" value="${escapeAttr(pkg.description || "")}" placeholder="Description">
+        <select class="carrier-input" data-carrier-input="${pkg.id}" aria-label="Carrier">
+          ${carrierOptionMarkup(pkg.carrier || "auto")}
+        </select>
         <button class="secondary compact" data-save-description="${pkg.id}">Save</button>
         <button class="secondary compact" data-cancel-edit="${pkg.id}">Cancel</button>
       </div>
@@ -182,8 +194,15 @@ function trackingMarkup(pkg) {
 
   return `
     <span class="tracking">${pkg.trackingNumber}</span>
+    <span class="note">${carrierLabel(pkg.carrier)}${pkg.carrier === "auto" && pkg.resolvedCarrier ? ` (${carrierLabel(pkg.resolvedCarrier)})` : ""}</span>
     ${pkg.description ? `<span class="note">${escapeHtml(pkg.description)}</span>` : ""}
   `;
+}
+
+function carrierOptionMarkup(selectedCarrier) {
+  return ["auto", "ups", "fedex", "usps"]
+    .map((carrier) => `<option value="${carrier}"${carrier === selectedCarrier ? " selected" : ""}>${carrierLabel(carrier)}</option>`)
+    .join("");
 }
 
 function actionMarkup(pkg) {
@@ -316,7 +335,8 @@ addForm.addEventListener("submit", async (event) => {
       method: "POST",
       body: JSON.stringify({
         trackingNumbers: form.get("trackingNumbers"),
-        description: form.get("description")
+        description: form.get("description"),
+        carrier: form.get("carrier")
       })
     });
     addForm.reset();
@@ -453,10 +473,11 @@ rows.addEventListener("click", async (event) => {
     saveButton.disabled = true;
     const id = saveButton.dataset.saveDescription;
     const input = rows.querySelector(`[data-description-input="${id}"]`);
+    const carrierInput = rows.querySelector(`[data-carrier-input="${id}"]`);
     try {
       await api(`/api/packages/${id}`, {
         method: "PATCH",
-        body: JSON.stringify({ description: input?.value || "" })
+        body: JSON.stringify({ description: input?.value || "", carrier: carrierInput?.value || "auto" })
       });
       editingId = null;
       setMessage("Description updated.");

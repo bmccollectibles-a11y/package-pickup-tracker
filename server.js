@@ -111,6 +111,22 @@ function normalizePhoneNumbers(input) {
   return [...new Set(values.map(normalizePhoneNumber).filter(Boolean))];
 }
 
+function normalizeCarrier(value) {
+  const carrier = String(value || "").trim().toLowerCase();
+  if (!carrier || carrier === "auto") return "auto";
+  if (["ups", "fedex", "usps"].includes(carrier)) return carrier;
+  throw new Error("Carrier must be UPS, FedEx, USPS, or Auto.");
+}
+
+function detectCarrier(trackingNumber) {
+  const normalized = String(trackingNumber || "").trim().toUpperCase();
+  const digitsOnly = normalized.replace(/\D/g, "");
+  if (normalized.startsWith("1Z")) return "ups";
+  if (/^(92|93|94|95|96)\d{18,32}$/.test(digitsOnly)) return "usps";
+  if (/^\d{12}$|^\d{15}$|^\d{20}$|^\d{22}$/.test(digitsOnly)) return "fedex";
+  return shippoCarrier;
+}
+
 function envSmsRecipients() {
   return normalizePhoneNumbers(process.env.TWILIO_TO || "");
 }
@@ -125,6 +141,8 @@ function publicPackage(pkg) {
     id: pkg.id,
     trackingNumber: pkg.trackingNumber,
     description: pkg.description || "",
+    carrier: normalizeCarrier(pkg.carrier || "auto"),
+    resolvedCarrier: resolvePackageCarrier(pkg),
     status: pkg.status || "pending",
     carrierStatus: cleanCarrierStatus(pkg.status, pkg.carrierStatus),
     eta: pkg.eta || null,
@@ -148,12 +166,13 @@ function cleanCarrierStatus(status, carrierStatus) {
   return value;
 }
 
-function createPackage(trackingNumber, description) {
+function createPackage(trackingNumber, description, carrier) {
   const now = new Date().toISOString();
   return {
     id: randomUUID(),
     trackingNumber,
     description,
+    carrier: normalizeCarrier(carrier),
     status: "pending",
     carrierStatus: "Waiting for first check",
     eta: null,
@@ -167,8 +186,12 @@ function createPackage(trackingNumber, description) {
   };
 }
 
-function shippoCarrierForTrackingNumber(trackingNumber) {
-  return trackingNumber.startsWith("SHIPPO_") ? "shippo" : shippoCarrier;
+function resolvePackageCarrier(pkg) {
+  return pkg.carrier && pkg.carrier !== "auto" ? normalizeCarrier(pkg.carrier) : detectCarrier(pkg.trackingNumber);
+}
+
+function shippoCarrierForTrackingNumber(trackingNumber, carrier) {
+  return trackingNumber.startsWith("SHIPPO_") ? "shippo" : carrier;
 }
 
 function interpretShippoTracking(payload) {
@@ -177,22 +200,29 @@ function interpretShippoTracking(payload) {
     typeof trackingStatus === "string"
       ? trackingStatus
       : trackingStatus?.status || payload?.status || payload?.object_state || "UNKNOWN";
-  const substatus = typeof trackingStatus === "object" && trackingStatus ? trackingStatus.substatus?.code || null : null;
+  const substatus =
+    typeof trackingStatus === "object" && trackingStatus
+      ? trackingStatus.substatus?.code || trackingStatus.substatus?.text || null
+      : null;
   const details =
     typeof trackingStatus === "object" && trackingStatus
-      ? trackingStatus.status_details || trackingStatus.message || trackingStatus.status
+      ? trackingStatus.status_details ||
+        trackingStatus.message ||
+        trackingStatus.substatus?.text ||
+        trackingStatus.status
       : status;
   const normalizedStatus = String(status || "").toUpperCase();
+  const normalizedSubstatus = String(substatus || "").toLowerCase();
   const normalizedDetails = String(details || "").toLowerCase();
   const delivered = normalizedStatus === "DELIVERED" || normalizedDetails.includes("delivered");
-  const outForDelivery = substatus === "out_for_delivery" || normalizedDetails.includes("out for delivery");
+  const outForDelivery = normalizedSubstatus === "out_for_delivery" || normalizedDetails.includes("out for delivery");
 
   return {
     status: delivered ? "arrived" : outForDelivery ? "out_for_delivery" : "in_transit",
     carrierStatus: delivered ? "Delivered" : outForDelivery ? "Out for Delivery" : "In Transit",
     eta: payload?.eta || null,
     originalEta: payload?.original_eta || null,
-    trackingSubstatus: substatus,
+    trackingSubstatus: substatus || null,
     raw: payload
   };
 }
@@ -232,13 +262,14 @@ function attentionSummary(packages) {
   return { ready, outForDelivery };
 }
 
-async function checkShippoTrackingNumber(trackingNumber) {
+async function checkShippoTrackingNumber(pkg) {
   const token = process.env.SHIPPO_API_TOKEN;
   if (!token) {
     throw new Error("Shippo API token is not configured. Add SHIPPO_API_TOKEN to enable Shippo checks.");
   }
 
-  const carrier = shippoCarrierForTrackingNumber(trackingNumber);
+  const trackingNumber = typeof pkg === "string" ? pkg : pkg.trackingNumber;
+  const carrier = shippoCarrierForTrackingNumber(trackingNumber, typeof pkg === "string" ? shippoCarrier : resolvePackageCarrier(pkg));
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), shippoTimeoutMs);
   const headers = {
@@ -275,14 +306,18 @@ async function checkShippoTrackingNumber(trackingNumber) {
   }
 }
 
-async function checkTrackingNumber(trackingNumber) {
+async function checkTrackingNumber(pkg) {
+  const trackingNumber = typeof pkg === "string" ? pkg : pkg.trackingNumber;
   if (trackingNumber.startsWith("TESTDELIVERED")) {
     return { status: "arrived", carrierStatus: "Delivered", eta: null, originalEta: null, trackingSubstatus: null };
+  }
+  if (trackingNumber.startsWith("TESTOUTFORDELIVERY")) {
+    return { status: "out_for_delivery", carrierStatus: "Out for Delivery", eta: null, originalEta: null, trackingSubstatus: "out_for_delivery" };
   }
   if (trackingNumber.startsWith("TESTTRANSIT")) {
     return { status: "in_transit", carrierStatus: "In transit", eta: null, originalEta: null, trackingSubstatus: null };
   }
-  return checkShippoTrackingNumber(trackingNumber);
+  return checkShippoTrackingNumber(pkg);
 }
 
 function escapeHtml(value) {
@@ -456,7 +491,7 @@ async function refreshPackages() {
   for (const pkg of activePackages) {
     try {
       const previousStatus = pkg.status;
-      const result = await checkTrackingNumber(pkg.trackingNumber);
+      const result = await checkTrackingNumber(pkg);
       const wasNewArrival = result.status === "arrived" && !pkg.arrivedAt;
       const wasNewOutForDelivery = result.status === "out_for_delivery" && previousStatus !== "out_for_delivery";
       updatePackageTrackingFields(pkg, result);
@@ -582,12 +617,19 @@ async function handleApi(req, res, pathname) {
       sendJson(res, 400, { error: "Enter at least one tracking number." });
       return;
     }
+    let carrier;
+    try {
+      carrier = normalizeCarrier(body.carrier || "auto");
+    } catch (error) {
+      sendJson(res, 400, { error: error.message });
+      return;
+    }
 
     const packages = await loadPackages();
     const existing = new Set(packages.map((pkg) => pkg.trackingNumber));
     const added = numbers
       .filter((number) => !existing.has(number))
-      .map((number) => createPackage(number, String(body.description || "").trim()));
+      .map((number) => createPackage(number, String(body.description || "").trim(), carrier));
 
     await savePackages([...packages, ...added]);
     sendJson(res, 201, { added: added.map(publicPackage), skippedDuplicates: numbers.length - added.length });
@@ -614,6 +656,14 @@ async function handleApi(req, res, pathname) {
       return;
     }
     pkg.description = String(body.description || "").trim();
+    if (body.carrier !== undefined) {
+      try {
+        pkg.carrier = normalizeCarrier(body.carrier);
+      } catch (error) {
+        sendJson(res, 400, { error: error.message });
+        return;
+      }
+    }
     await savePackages(packages);
     sendJson(res, 200, { package: publicPackage(pkg) });
     return;

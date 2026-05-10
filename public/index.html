@@ -44,6 +44,12 @@
           <label for="trackingNumbers">Tracking numbers</label>
           <textarea id="trackingNumbers" name="trackingNumbers" rows="5" placeholder="Paste one or many tracking numbers"></textarea>
           <div class="form-row">
+            <select id="carrier" name="carrier" aria-label="Carrier">
+              <option value="auto">Auto carrier</option>
+              <option value="ups">UPS</option>
+              <option value="fedex">FedEx</option>
+              <option value="usps">USPS</option>
+            </select>
             <input id="description" name="description" placeholder="Optional note, supplier, break, or order">
             <button class="primary" type="submit">Add tracking</button>
           </div>
