@@ -5,7 +5,7 @@ const notifyButton = document.querySelector("#notifyButton");
 const statusMessage = document.querySelector("#statusMessage");
 const tabs = [...document.querySelectorAll(".tab")];
 let packages = [];
-let filter = "needs_pickup";
+let filter = "active";
 let editingId = null;
 
 function setMessage(message, isError = false) {
@@ -28,7 +28,7 @@ async function api(path, options = {}) {
     return payload;
   } catch (error) {
     if (error.name === "AbortError") {
-      throw new Error("The status check is taking too long. Verify TRACKER_MODE in Render, then try again.");
+      throw new Error("The status check is taking too long. Verify the Shippo settings in Render, then try again.");
     }
     throw error;
   } finally {
@@ -67,15 +67,47 @@ function etaSortValue(pkg) {
   return Number.isNaN(time) ? Number.MAX_SAFE_INTEGER : time;
 }
 
+function dateSortValue(value, fallback = 0) {
+  if (!value) return fallback;
+  const time = new Date(value).getTime();
+  return Number.isNaN(time) ? fallback : time;
+}
+
 function sortByEtaThenCreated(items) {
   return [...items].sort((a, b) => etaSortValue(a) - etaSortValue(b) || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 }
 
+function activeStatusSortValue(pkg) {
+  return {
+    arrived: 0,
+    out_for_delivery: 1,
+    in_transit: 2,
+    pending: 3,
+    check_failed: 4
+  }[pkg.status] ?? 5;
+}
+
+function activeSortValue(pkg) {
+  if (pkg.status === "arrived") {
+    return -dateSortValue(pkg.arrivedAt || pkg.lastCheckedAt || pkg.createdAt);
+  }
+  return etaSortValue(pkg);
+}
+
+function sortActivePackages(items) {
+  return [...items].sort(
+    (a, b) =>
+      activeStatusSortValue(a) - activeStatusSortValue(b) ||
+      activeSortValue(a) - activeSortValue(b) ||
+      dateSortValue(a.createdAt) - dateSortValue(b.createdAt)
+  );
+}
+
 function visiblePackages() {
-  if (filter === "needs_pickup") return packages.filter((pkg) => pkg.status === "arrived" && !pkg.pickedUpAt);
+  if (filter === "needs_pickup") return sortActivePackages(packages.filter((pkg) => pkg.status === "arrived" && !pkg.pickedUpAt));
   if (filter === "out_for_delivery") return sortByEtaThenCreated(packages.filter((pkg) => pkg.status === "out_for_delivery" && !pkg.pickedUpAt));
   if (filter === "active") {
-    return sortByEtaThenCreated(packages.filter((pkg) => !pkg.pickedUpAt && pkg.status !== "arrived" && pkg.status !== "out_for_delivery"));
+    return sortActivePackages(packages.filter((pkg) => !pkg.pickedUpAt));
   }
   if (filter === "picked_up") return packages.filter((pkg) => pkg.pickedUpAt);
   return sortByEtaThenCreated(packages);
@@ -83,7 +115,7 @@ function visiblePackages() {
 
 function updateCounts() {
   document.querySelector("#pickupCount").textContent = packages.filter((pkg) => pkg.status === "arrived" && !pkg.pickedUpAt).length;
-  document.querySelector("#activeCount").textContent = packages.filter((pkg) => !pkg.pickedUpAt && pkg.status !== "arrived" && pkg.status !== "out_for_delivery").length;
+  document.querySelector("#activeCount").textContent = packages.filter((pkg) => !pkg.pickedUpAt).length;
   document.querySelector("#outForDeliveryCount").textContent = packages.filter((pkg) => pkg.status === "out_for_delivery" && !pkg.pickedUpAt).length;
   document.querySelector("#pickedUpCount").textContent = packages.filter((pkg) => pkg.pickedUpAt).length;
 }

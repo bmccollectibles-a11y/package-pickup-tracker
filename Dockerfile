@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/playwright:v1.59.1-noble
+FROM node:20-bookworm-slim
 
 WORKDIR /app
 
@@ -10,9 +10,8 @@ COPY . .
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV DATA_DIR=/var/data
-ENV TRACKER_MODE=scrape
-ENV UPS_SCRAPER_ENGINE=browser
-ENV CHROME_EXECUTABLE_PATH=
+ENV SHIPPO_CARRIER=ups
+ENV SHIPPO_TIMEOUT_MS=20000
 
 EXPOSE 3000
 

@@ -1,6 +1,6 @@
 # Package Pickup Tracker
 
-A small local web app for tracking incoming UPS packages, checking whether they are ready for pickup, and marking them picked up.
+A small web app for tracking incoming packages through Shippo, checking whether they are ready for pickup, and marking them picked up.
 
 ## Run
 
@@ -10,44 +10,23 @@ node server.js
 
 Open `http://localhost:3000`.
 
-## Tracking Modes
+## Tracking
 
-The default mode is public UPS page scraping, so it does not require a UPS account number or API credentials:
-
-```bash
-TRACKER_MODE=scrape
-UPS_SCRAPER_ENGINE=browser
-UPS_BROWSER_CONCURRENCY=2
-UPS_NAVIGATION_TIMEOUT_MS=25000
-UPS_STATUS_TIMEOUT_MS=20000
-UPS_BROWSER_RETRY_COUNT=3
-```
-
-Browser scraping uses Chrome so UPS can render the tracking status before the app reads it. Refreshes reuse one browser and check up to `UPS_BROWSER_CONCURRENCY` packages at once. UPS can hang before navigation commits, so the browser scraper retries each package up to `UPS_BROWSER_RETRY_COUNT` times.
-
-If UPS blocks or changes the public page, the app will mark that package as `Check failed` with the error text. You can also switch to Shippo while waiting for official UPS API access:
+Tracking checks use Shippo only. Set a live Shippo API key for real carrier tracking:
 
 ```bash
-TRACKER_MODE=shippo
 SHIPPO_API_TOKEN=your_shippo_token
 SHIPPO_CARRIER=ups
 SHIPPO_TIMEOUT_MS=20000
 ```
 
-Shippo test keys work with Shippo mock tracking numbers such as `SHIPPO_DELIVERED` and `SHIPPO_TRANSIT`. Real UPS tracking numbers require a live Shippo key. Shippo mode also stores carrier ETA and detects `out_for_delivery` substatus when the carrier provides it.
+`SHIPPO_CARRIER` defaults to `ups`, but can be changed to another Shippo carrier token such as `fedex` when needed. Shippo test keys work with Shippo mock tracking numbers such as `SHIPPO_DELIVERED` and `SHIPPO_TRANSIT`.
 
-You can still switch to the official UPS API later:
-
-```bash
-TRACKER_MODE=api
-UPS_CLIENT_ID=your_client_id
-UPS_CLIENT_SECRET=your_client_secret
-UPS_ENV=production
-```
+The app stores carrier ETA when Shippo provides it and detects `out_for_delivery` substatus when available.
 
 ## Test Numbers
 
-These fake prefixes let you test the workflow without calling UPS:
+These fake prefixes let you test the workflow without calling Shippo:
 
 - `TESTDELIVERED123` becomes ready for pickup.
 - `TESTTRANSIT123` stays in transit.
@@ -58,7 +37,7 @@ Email uses Resend and SMS uses Twilio. Leave those environment variables blank t
 
 ## Deploy on Render
 
-This app can run as one Render Web Service. Use Docker so the hosted app has a browser available for UPS scraping. Keep the Playwright package version in `package.json` matched to the Playwright Docker image version in `Dockerfile`.
+This app can run as one Render Web Service using Docker.
 
 1. Push this project to a GitHub repository.
 2. In Render, create a **New Web Service** from that repository.
@@ -70,11 +49,9 @@ This app can run as one Render Web Service. Use Docker so the hosted app has a b
 
 ```bash
 DATA_DIR=/var/data
-TRACKER_MODE=shippo
 SHIPPO_API_TOKEN=your_shippo_token
 SHIPPO_CARRIER=ups
 SHIPPO_TIMEOUT_MS=20000
-UPS_SCRAPER_ENGINE=browser
 CHECK_INTERVAL_HOURS=0
 RESEND_API_KEY=your_resend_key
 NOTIFY_EMAIL_FROM=Package Tracker <packages@bmcpackages.com>

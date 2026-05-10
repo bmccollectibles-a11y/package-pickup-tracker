@@ -3,7 +3,6 @@ import { readFile, writeFile, mkdir, stat } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { extname, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
-import { createRequire } from "node:module";
 
 const root = resolve(".");
 const publicDir = join(root, "public");
@@ -11,21 +10,8 @@ const dataDir = resolve(process.env.DATA_DIR || join(root, "data"));
 const dataFile = join(dataDir, "packages.json");
 const port = Number(process.env.PORT || 3000);
 const checkIntervalHours = Number(process.env.CHECK_INTERVAL_HOURS || 24);
-const checkerMode = (process.env.TRACKER_MODE || "scrape").toLowerCase();
-const scraperEngine = (process.env.UPS_SCRAPER_ENGINE || "browser").toLowerCase();
 const shippoCarrier = (process.env.SHIPPO_CARRIER || "ups").toLowerCase();
 const shippoTimeoutMs = Number(process.env.SHIPPO_TIMEOUT_MS || 20000);
-const browserConcurrency = Number(process.env.UPS_BROWSER_CONCURRENCY || 2);
-const browserStatusTimeoutMs = Number(process.env.UPS_STATUS_TIMEOUT_MS || 20000);
-const browserNavigationTimeoutMs = Number(process.env.UPS_NAVIGATION_TIMEOUT_MS || 25000);
-const browserRetryCount = Number(process.env.UPS_BROWSER_RETRY_COUNT || 3);
-const chromeExecutablePath =
-  process.env.CHROME_EXECUTABLE_PATH ||
-  (process.platform === "darwin" ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" : "");
-const scrapeUrlTemplate =
-  process.env.UPS_SCRAPE_URL_TEMPLATE ||
-  "https://www.ups.com/track?track=yes&trackNums={trackingNumber}&loc=en_US&requester=ST/trackdetails";
-const require = createRequire(import.meta.url);
 
 const contentTypes = {
   ".html": "text/html; charset=utf-8",
@@ -116,62 +102,6 @@ function createPackage(trackingNumber, description) {
   };
 }
 
-function upsBaseUrl() {
-  return process.env.UPS_ENV === "sandbox"
-    ? "https://wwwcie.ups.com"
-    : "https://onlinetools.ups.com";
-}
-
-async function getUpsToken() {
-  const clientId = process.env.UPS_CLIENT_ID;
-  const clientSecret = process.env.UPS_CLIENT_SECRET;
-  if (!clientId || !clientSecret) {
-    throw new Error("UPS credentials are not configured.");
-  }
-
-  const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
-  const response = await fetch(`${upsBaseUrl()}/security/v1/oauth/token`, {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${credentials}`,
-      "Content-Type": "application/x-www-form-urlencoded"
-    },
-    body: "grant_type=client_credentials"
-  });
-
-  if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`UPS OAuth failed: ${response.status} ${detail}`);
-  }
-
-  const payload = await response.json();
-  return payload.access_token;
-}
-
-function interpretUpsTracking(payload) {
-  const shipment = payload?.trackResponse?.shipment?.[0];
-  const pkg = shipment?.package?.[0];
-  const activity = pkg?.activity?.[0];
-  const status = activity?.status || pkg?.currentStatus || shipment?.currentStatus || {};
-  const description = status.description || status.statusDescription || "Status unavailable";
-  const type = String(status.type || status.code || "").toUpperCase();
-  const lowerDescription = description.toLowerCase();
-  const isDelivered =
-    type === "D" ||
-    lowerDescription.includes("delivered") ||
-    lowerDescription.includes("available for pickup") ||
-    lowerDescription.includes("ready for pickup");
-
-  return {
-    status: isDelivered ? "arrived" : "in_transit",
-    carrierStatus: description,
-    eta: null,
-    originalEta: null,
-    trackingSubstatus: null,
-    raw: payload
-  };
-}
-
 function shippoCarrierForTrackingNumber(trackingNumber) {
   return trackingNumber.startsWith("SHIPPO_") ? "shippo" : shippoCarrier;
 }
@@ -200,45 +130,6 @@ function interpretShippoTracking(payload) {
     trackingSubstatus: substatus,
     raw: payload
   };
-}
-
-function decodeHtml(value) {
-  return String(value || "")
-    .replaceAll("&nbsp;", " ")
-    .replaceAll("&amp;", "&")
-    .replaceAll("&quot;", '"')
-    .replaceAll("&#39;", "'")
-    .replaceAll("&lt;", "<")
-    .replaceAll("&gt;", ">");
-}
-
-function normalizePageText(html) {
-  return decodeHtml(html)
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function statusSnippet(text, terms) {
-  const lower = text.toLowerCase();
-  const sentenceMatches = text.match(/[^.!?\n]{0,90}(Delivered|On the Way|In Transit|Out for Delivery|Label Created|We Have Your Package|Left at the Dock|Available for Pickup|Ready for Pickup|Held for Pickup)[^.!?\n]{0,140}/gi);
-  if (sentenceMatches?.length) {
-    return sentenceMatches
-      .map((match) => match.replace(/\s+/g, " ").trim())
-      .find((match) => terms.some((term) => match.toLowerCase().includes(term))) || sentenceMatches[0].trim();
-  }
-
-  for (const term of terms) {
-    const index = lower.indexOf(term);
-    if (index !== -1) {
-      const start = Math.max(0, index - 20);
-      const end = Math.min(text.length, index + 90);
-      return text.slice(start, end).trim();
-    }
-  }
-  return text.slice(0, 220).trim();
 }
 
 function updatePackageTrackingFields(pkg, result) {
@@ -274,162 +165,6 @@ function attentionSummary(packages) {
   const ready = packages.filter((pkg) => pkg.status === "arrived").length;
   const outForDelivery = packages.filter((pkg) => pkg.status === "out_for_delivery").length;
   return { ready, outForDelivery };
-}
-
-function interpretScrapedTracking(html) {
-  const text = normalizePageText(html);
-  const lower = text.toLowerCase();
-  const deliveredTerms = [
-    "delivered",
-    "available for pickup",
-    "ready for pickup",
-    "held for pickup",
-    "pickup ready",
-    "delivered to ups access point",
-    "delivered to ups store"
-  ];
-  const transitTerms = [
-    "on the way",
-    "in transit",
-    "out for delivery",
-    "label created",
-    "shipment ready for ups",
-    "we have your package",
-    "processing at ups facility",
-    "arriving",
-    "estimated delivery"
-  ];
-  const notFoundTerms = [
-    "we could not locate the shipment details",
-    "tracking number is not valid",
-    "cannot be found",
-    "unable to retrieve tracking information",
-    "try again later"
-  ];
-
-  if (deliveredTerms.some((term) => lower.includes(term))) {
-    return {
-      status: "arrived",
-      carrierStatus: "Delivered",
-      eta: null,
-      originalEta: null,
-      trackingSubstatus: null
-    };
-  }
-
-  if (lower.includes("out for delivery")) {
-    return {
-      status: "out_for_delivery",
-      carrierStatus: "Out for Delivery",
-      eta: null,
-      originalEta: null,
-      trackingSubstatus: "out_for_delivery"
-    };
-  }
-
-  if (transitTerms.some((term) => lower.includes(term))) {
-    return {
-      status: "in_transit",
-      carrierStatus: "In Transit",
-      eta: null,
-      originalEta: null,
-      trackingSubstatus: null
-    };
-  }
-
-  if (notFoundTerms.some((term) => lower.includes(term))) {
-    throw new Error(statusSnippet(text, notFoundTerms));
-  }
-
-  throw new Error("Could not read a UPS status from the tracking page. UPS may have changed the page or blocked the request.");
-}
-
-function loadPlaywright() {
-  try {
-    return require("playwright");
-  } catch {
-    return require("/Users/ben/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright");
-  }
-}
-
-function browserLaunchOptions() {
-  const launchOptions = {
-    headless: true,
-    args: ["--disable-http2", "--disable-blink-features=AutomationControlled"]
-  };
-  if (chromeExecutablePath) launchOptions.executablePath = chromeExecutablePath;
-  return launchOptions;
-}
-
-async function readRenderedTrackingStatus(page, trackingNumber) {
-  const url = scrapeUrlTemplate.replace("{trackingNumber}", encodeURIComponent(trackingNumber));
-  await page.goto(url, { waitUntil: "commit", timeout: browserNavigationTimeoutMs });
-
-  const startedAt = Date.now();
-  let lastError = null;
-  while (Date.now() - startedAt < browserStatusTimeoutMs) {
-    const text = await page.locator("body").innerText({ timeout: 5000 });
-    try {
-      return interpretScrapedTracking(text);
-    } catch (error) {
-      lastError = error;
-      await page.waitForTimeout(750);
-    }
-  }
-
-  throw lastError || new Error("Could not read a UPS status from the tracking page.");
-}
-
-async function readRenderedTrackingStatusWithRetry(page, trackingNumber) {
-  let lastError = null;
-  for (let attempt = 1; attempt <= browserRetryCount; attempt += 1) {
-    try {
-      return await readRenderedTrackingStatus(page, trackingNumber);
-    } catch (error) {
-      lastError = error;
-      if (attempt === browserRetryCount) break;
-      await page.goto("about:blank", { waitUntil: "commit", timeout: 5000 }).catch(() => {});
-      await page.waitForTimeout(1000 * attempt);
-    }
-  }
-  throw lastError;
-}
-
-async function mapWithConcurrency(items, limit, worker) {
-  const results = new Array(items.length);
-  let index = 0;
-
-  async function runNext() {
-    while (index < items.length) {
-      const currentIndex = index;
-      index += 1;
-      results[currentIndex] = await worker(items[currentIndex], currentIndex);
-    }
-  }
-
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, runNext));
-  return results;
-}
-
-async function checkUpsTrackingNumber(trackingNumber, token) {
-  const url = new URL(`${upsBaseUrl()}/api/track/v1/details/${encodeURIComponent(trackingNumber)}`);
-  url.searchParams.set("locale", "en_US");
-  url.searchParams.set("returnSignature", "false");
-
-  const response = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      transId: randomUUID(),
-      transactionSrc: "package-pickup-tracker"
-    }
-  });
-
-  if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`UPS tracking failed for ${trackingNumber}: ${response.status} ${detail}`);
-  }
-
-  return interpretUpsTracking(await response.json());
 }
 
 async function checkShippoTrackingNumber(trackingNumber) {
@@ -475,97 +210,14 @@ async function checkShippoTrackingNumber(trackingNumber) {
   }
 }
 
-async function scrapeUpsTrackingNumber(trackingNumber) {
-  if (scraperEngine === "browser") {
-    return scrapeUpsTrackingNumberWithBrowser(trackingNumber);
-  }
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20000);
-  const url = scrapeUrlTemplate.replace("{trackingNumber}", encodeURIComponent(trackingNumber));
-
-  try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Cache-Control": "no-cache",
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error(`UPS tracking page returned ${response.status}.`);
-    }
-
-    return interpretScrapedTracking(await response.text());
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-async function scrapeUpsTrackingNumberWithBrowser(trackingNumber) {
-  const { chromium } = loadPlaywright();
-  const browser = await chromium.launch(browserLaunchOptions());
-
-  try {
-    const page = await browser.newPage({
-      userAgent:
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    });
-    return readRenderedTrackingStatusWithRetry(page, trackingNumber);
-  } finally {
-    await browser.close();
-  }
-}
-
-async function checkTrackingNumbersWithSharedBrowser(trackingNumbers) {
-  const { chromium } = loadPlaywright();
-  const browser = await chromium.launch(browserLaunchOptions());
-
-  try {
-    const checked = await mapWithConcurrency(trackingNumbers, browserConcurrency, async (trackingNumber) => {
-      const page = await browser.newPage({
-        userAgent:
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-      });
-      try {
-        return { trackingNumber, result: await readRenderedTrackingStatusWithRetry(page, trackingNumber) };
-      } catch (error) {
-        return { trackingNumber, error };
-      } finally {
-        await page.close().catch(() => {});
-      }
-    });
-
-    return new Map(checked.map((item) => [item.trackingNumber, item]));
-  } finally {
-    await browser.close();
-  }
-}
-
-async function checkTrackingNumber(trackingNumber, token) {
+async function checkTrackingNumber(trackingNumber) {
   if (trackingNumber.startsWith("TESTDELIVERED")) {
-    return { status: "arrived", carrierStatus: "Delivered to UPS Store", eta: null, originalEta: null, trackingSubstatus: null };
+    return { status: "arrived", carrierStatus: "Delivered", eta: null, originalEta: null, trackingSubstatus: null };
   }
   if (trackingNumber.startsWith("TESTTRANSIT")) {
     return { status: "in_transit", carrierStatus: "In transit", eta: null, originalEta: null, trackingSubstatus: null };
   }
-
-  if (checkerMode === "scrape") {
-    return scrapeUpsTrackingNumber(trackingNumber);
-  }
-
-  if (checkerMode === "shippo") {
-    return checkShippoTrackingNumber(trackingNumber);
-  }
-
-  if (!token) {
-    throw new Error("UPS credentials are not configured. Add UPS_CLIENT_ID and UPS_CLIENT_SECRET to enable live checks.");
-  }
-  return checkUpsTrackingNumber(trackingNumber, token);
+  return checkShippoTrackingNumber(trackingNumber);
 }
 
 function escapeHtml(value) {
@@ -723,28 +375,16 @@ async function notifyArrivals(packages) {
 
 async function refreshPackages() {
   const packages = await loadPackages();
-  const token =
-    checkerMode === "api" && process.env.UPS_CLIENT_ID && process.env.UPS_CLIENT_SECRET ? await getUpsToken() : null;
   const now = new Date().toISOString();
   const newlyArrived = [];
   const newlyOutForDelivery = [];
   const errors = [];
   const activePackages = packages.filter((pkg) => !pkg.pickedUpAt);
-  const browserBatchResults =
-    checkerMode === "scrape" && scraperEngine === "browser"
-      ? await checkTrackingNumbersWithSharedBrowser(
-          activePackages
-            .map((pkg) => pkg.trackingNumber)
-            .filter((trackingNumber) => !trackingNumber.startsWith("TESTDELIVERED") && !trackingNumber.startsWith("TESTTRANSIT"))
-        )
-      : null;
 
   for (const pkg of activePackages) {
     try {
-      const browserBatchResult = browserBatchResults?.get(pkg.trackingNumber);
-      if (browserBatchResult?.error) throw browserBatchResult.error;
       const previousStatus = pkg.status;
-      const result = browserBatchResult?.result || (await checkTrackingNumber(pkg.trackingNumber, token));
+      const result = await checkTrackingNumber(pkg.trackingNumber);
       const wasNewArrival = result.status === "arrived" && !pkg.arrivedAt;
       const wasNewOutForDelivery = result.status === "out_for_delivery" && previousStatus !== "out_for_delivery";
       updatePackageTrackingFields(pkg, result);
@@ -820,11 +460,9 @@ async function handleApi(req, res, pathname) {
 
   if (req.method === "GET" && pathname === "/api/config") {
     sendJson(res, 200, {
-      trackerMode: checkerMode,
-      scraperEngine,
+      trackerMode: "shippo",
       shippoCarrier,
       shippoConfigured: Boolean(process.env.SHIPPO_API_TOKEN),
-      upsApiConfigured: Boolean(process.env.UPS_CLIENT_ID && process.env.UPS_CLIENT_SECRET),
       checkIntervalHours
     });
     return;

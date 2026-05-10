@@ -22,7 +22,7 @@
       <section class="entry-panel">
         <form id="addForm">
           <label for="trackingNumbers">Tracking numbers</label>
-          <textarea id="trackingNumbers" name="trackingNumbers" rows="5" placeholder="Paste one or many UPS tracking numbers"></textarea>
+          <textarea id="trackingNumbers" name="trackingNumbers" rows="5" placeholder="Paste one or many tracking numbers"></textarea>
           <div class="form-row">
             <input id="description" name="description" placeholder="Optional note, supplier, break, or order">
             <button class="primary" type="submit">Add tracking</button>
@@ -37,7 +37,7 @@
         </div>
         <div>
           <span id="activeCount">0</span>
-          <p>Still active</p>
+          <p>Active packages</p>
         </div>
         <div>
           <span id="outForDeliveryCount">0</span>
@@ -51,9 +51,9 @@
 
       <section class="toolbar">
         <div class="tabs" role="tablist" aria-label="Package filters">
-          <button class="tab active" data-filter="needs_pickup">Needs pickup</button>
+          <button class="tab active" data-filter="active">Active</button>
+          <button class="tab" data-filter="needs_pickup">Needs pickup</button>
           <button class="tab" data-filter="out_for_delivery">Out for delivery</button>
-          <button class="tab" data-filter="active">Active</button>
           <button class="tab" data-filter="picked_up">Picked up</button>
           <button class="tab" data-filter="all">All</button>
         </div>
