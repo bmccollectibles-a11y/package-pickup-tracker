@@ -31,6 +31,7 @@ If UPS blocks or changes the public page, the app will mark that package as `Che
 TRACKER_MODE=shippo
 SHIPPO_API_TOKEN=your_shippo_token
 SHIPPO_CARRIER=ups
+SHIPPO_TIMEOUT_MS=20000
 ```
 
 Shippo test keys work with Shippo mock tracking numbers such as `SHIPPO_DELIVERED` and `SHIPPO_TRANSIT`. Real UPS tracking numbers require a live Shippo key.
@@ -72,6 +73,7 @@ DATA_DIR=/var/data
 TRACKER_MODE=shippo
 SHIPPO_API_TOKEN=your_shippo_token
 SHIPPO_CARRIER=ups
+SHIPPO_TIMEOUT_MS=20000
 UPS_SCRAPER_ENGINE=browser
 CHECK_INTERVAL_HOURS=0
 RESEND_API_KEY=your_resend_key

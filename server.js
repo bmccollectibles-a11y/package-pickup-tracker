@@ -14,6 +14,7 @@ const checkIntervalHours = Number(process.env.CHECK_INTERVAL_HOURS || 24);
 const checkerMode = (process.env.TRACKER_MODE || "scrape").toLowerCase();
 const scraperEngine = (process.env.UPS_SCRAPER_ENGINE || "browser").toLowerCase();
 const shippoCarrier = (process.env.SHIPPO_CARRIER || "ups").toLowerCase();
+const shippoTimeoutMs = Number(process.env.SHIPPO_TIMEOUT_MS || 20000);
 const browserConcurrency = Number(process.env.UPS_BROWSER_CONCURRENCY || 2);
 const browserStatusTimeoutMs = Number(process.env.UPS_STATUS_TIMEOUT_MS || 20000);
 const browserNavigationTimeoutMs = Number(process.env.UPS_NAVIGATION_TIMEOUT_MS || 25000);
@@ -372,32 +373,40 @@ async function checkShippoTrackingNumber(trackingNumber) {
   }
 
   const carrier = shippoCarrierForTrackingNumber(trackingNumber);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), shippoTimeoutMs);
   const headers = {
     Authorization: `ShippoToken ${token}`,
     Accept: "application/json"
   };
-  const response = trackingNumber.startsWith("SHIPPO_")
-    ? await fetch("https://api.goshippo.com/tracks/", {
-        method: "POST",
-        headers: {
-          ...headers,
-          "Content-Type": "application/x-www-form-urlencoded"
-        },
-        body: new URLSearchParams({
-          carrier,
-          tracking_number: trackingNumber,
-          metadata: "Package Pickup Tracker test"
+  try {
+    const response = trackingNumber.startsWith("SHIPPO_")
+      ? await fetch("https://api.goshippo.com/tracks/", {
+          method: "POST",
+          signal: controller.signal,
+          headers: {
+            ...headers,
+            "Content-Type": "application/x-www-form-urlencoded"
+          },
+          body: new URLSearchParams({
+            carrier,
+            tracking_number: trackingNumber,
+            metadata: "Package Pickup Tracker test"
+          })
         })
-      })
-    : await fetch(`https://api.goshippo.com/tracks/${encodeURIComponent(carrier)}/${encodeURIComponent(trackingNumber)}`, {
-        headers
-      });
+      : await fetch(`https://api.goshippo.com/tracks/${encodeURIComponent(carrier)}/${encodeURIComponent(trackingNumber)}`, {
+          signal: controller.signal,
+          headers
+        });
 
-  if (!response.ok) {
-    throw new Error(`Shippo tracking failed for ${trackingNumber}: ${response.status} ${await response.text()}`);
+    if (!response.ok) {
+      throw new Error(`Shippo tracking failed for ${trackingNumber}: ${response.status} ${await response.text()}`);
+    }
+
+    return interpretShippoTracking(await response.json());
+  } finally {
+    clearTimeout(timeout);
   }
-
-  return interpretShippoTracking(await response.json());
 }
 
 async function scrapeUpsTrackingNumber(trackingNumber) {
