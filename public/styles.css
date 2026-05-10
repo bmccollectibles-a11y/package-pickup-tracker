@@ -33,6 +33,10 @@ textarea {
   font: inherit;
 }
 
+button {
+  min-height: 42px;
+}
+
 .topbar {
   display: flex;
   align-items: center;
@@ -308,7 +312,7 @@ input:focus {
 
 table {
   width: 100%;
-  min-width: 980px;
+  min-width: 920px;
   border-collapse: collapse;
 }
 
@@ -445,10 +449,51 @@ tr:last-child td {
 }
 
 @media (max-width: 760px) {
+  body {
+    overflow-x: hidden;
+  }
+
   .topbar,
   .toolbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .topbar {
+    gap: 16px;
+    padding: 20px 16px;
+  }
+
+  h1 {
+    font-size: 24px;
+  }
+
+  main {
+    width: calc(100vw - 24px);
+    margin: 14px auto 32px;
+  }
+
+  .entry-panel,
+  .table-wrap {
+    border-radius: 6px;
+  }
+
+  .entry-panel {
+    padding: 14px;
+  }
+
+  .header-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    justify-content: stretch;
+  }
+
+  .header-actions button,
+  .form-row button,
+  .password-form button,
+  .recipient-form button {
+    width: 100%;
   }
 
   .form-row,
@@ -458,7 +503,124 @@ tr:last-child td {
     grid-template-columns: 1fr;
   }
 
+  .summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin: 12px 0;
+  }
+
+  .summary-grid div {
+    padding: 12px;
+  }
+
+  .summary-grid span {
+    font-size: 26px;
+  }
+
+  .summary-grid p {
+    font-size: 13px;
+  }
+
+  .tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .tab {
+    width: 100%;
+    padding: 10px 8px;
+    text-align: center;
+  }
+
   #statusMessage {
     text-align: left;
+  }
+
+  .settings-dialog {
+    width: calc(100vw - 24px);
+    max-height: calc(100vh - 32px);
+    overflow: auto;
+    padding: 14px;
+  }
+
+  .table-wrap {
+    overflow-x: visible;
+    background: transparent;
+    border: 0;
+  }
+
+  table {
+    min-width: 0;
+  }
+
+  thead {
+    display: none;
+  }
+
+  tbody,
+  tr,
+  td {
+    display: block;
+    width: 100%;
+  }
+
+  tr {
+    margin-bottom: 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    overflow: hidden;
+  }
+
+  tr:last-child {
+    margin-bottom: 0;
+  }
+
+  td {
+    display: grid;
+    grid-template-columns: minmax(92px, 34%) minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+    padding: 11px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  td:last-child {
+    border-bottom: 0;
+  }
+
+  td::before {
+    content: attr(data-label);
+    color: #4b5549;
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  td > * {
+    grid-column: 2;
+  }
+
+  .tracking,
+  td {
+    overflow-wrap: anywhere;
+  }
+
+  .row-actions,
+  .edit-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .row-actions button,
+  .edit-row button,
+  td > button {
+    width: 100%;
+  }
+
+  .description-input {
+    min-width: 0;
+    max-width: none;
   }
 }

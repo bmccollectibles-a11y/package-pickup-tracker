@@ -149,12 +149,12 @@ function render() {
   for (const pkg of visible) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${trackingMarkup(pkg)}</td>
-      <td><span class="pill ${pkg.status}">${statusLabel(pkg.status)}</span></td>
-      <td>${pkg.carrierStatus || ""}</td>
-      <td>${etaMarkup(pkg)}</td>
-      <td>${fmtDate(pkg.lastCheckedAt)}</td>
-      <td>${actionMarkup(pkg)}</td>
+      <td data-label="Tracking">${trackingMarkup(pkg)}</td>
+      <td data-label="Status"><span class="pill ${pkg.status}">${statusLabel(pkg.status)}</span></td>
+      <td data-label="Carrier update">${pkg.carrierStatus || ""}</td>
+      <td data-label="ETA">${etaMarkup(pkg)}</td>
+      <td data-label="Last checked">${fmtDate(pkg.lastCheckedAt)}</td>
+      <td data-label="Action">${actionMarkup(pkg)}</td>
     `;
     rows.appendChild(tr);
   }
