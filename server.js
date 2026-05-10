@@ -338,25 +338,35 @@ async function sendTwilioSms(packages) {
   const sid = process.env.TWILIO_ACCOUNT_SID;
   const token = process.env.TWILIO_AUTH_TOKEN;
   const from = process.env.TWILIO_FROM;
-  const to = process.env.TWILIO_TO;
-  if (!sid || !token || !from || !to) return { skipped: "sms not configured" };
+  const recipients = String(process.env.TWILIO_TO || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (!sid || !token || !from || !recipients.length) return { skipped: "sms not configured" };
 
-  const body = `Package pickup status: ${packages
-    .map((pkg) => `${emailStatusLabel(pkg)} ${pkg.trackingNumber}`)
-    .join(", ")}`;
-  const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString("base64")}`,
-      "Content-Type": "application/x-www-form-urlencoded"
-    },
-    body: new URLSearchParams({ From: from, To: to, Body: body.slice(0, 1500) })
+  const { ready, outForDelivery } = attentionSummary(packages);
+  const lines = packages.map((pkg) => {
+    const eta = pkg.eta ? ` ETA ${formatEmailEta(pkg.eta)}` : "";
+    return `${emailStatusLabel(pkg)}: ${pkg.trackingNumber}${pkg.description ? ` - ${pkg.description}` : ""}${eta}`;
   });
+  const body = [`BMC packages: ${ready} ready, ${outForDelivery} out for delivery.`, ...lines].join("\n");
+  const results = [];
+  for (const recipient of recipients) {
+    const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString("base64")}`,
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: new URLSearchParams({ From: from, To: recipient, Body: body.slice(0, 1500) })
+    });
 
-  if (!response.ok) {
-    throw new Error(`SMS notification failed: ${response.status} ${await response.text()}`);
+    if (!response.ok) {
+      throw new Error(`SMS notification failed for ${recipient}: ${response.status} ${await response.text()}`);
+    }
+    results.push(recipient);
   }
-  return { sent: "sms" };
+  return { sent: "sms", recipients: results.length };
 }
 
 async function notifyArrivals(packages) {
@@ -463,6 +473,12 @@ async function handleApi(req, res, pathname) {
       trackerMode: "shippo",
       shippoCarrier,
       shippoConfigured: Boolean(process.env.SHIPPO_API_TOKEN),
+      smsConfigured: Boolean(
+        process.env.TWILIO_ACCOUNT_SID &&
+          process.env.TWILIO_AUTH_TOKEN &&
+          process.env.TWILIO_FROM &&
+          process.env.TWILIO_TO
+      ),
       checkIntervalHours
     });
     return;

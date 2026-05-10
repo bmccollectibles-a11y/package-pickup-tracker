@@ -215,9 +215,11 @@ function notificationMessage(payload) {
 
   if (!totalCount) return "No packages are currently ready or out for delivery.";
   const summary = `${readyCount} ready, ${outForDeliveryCount} out for delivery`;
+  if (sent.includes("email") && sent.includes("sms")) return `Email and text sent for ${summary}.`;
   if (sent.includes("email")) return `Email sent for ${summary}.`;
-  if (errors.length) return `Email failed for ${summary}.`;
-  return `${summary}, but email is not configured.`;
+  if (sent.includes("sms")) return `Text sent for ${summary}.`;
+  if (errors.length) return `Notification failed for ${summary}.`;
+  return `${summary}, but notifications are not configured.`;
 }
 
 async function loadPackages() {

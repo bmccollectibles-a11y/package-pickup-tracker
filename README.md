@@ -35,6 +35,25 @@ These fake prefixes let you test the workflow without calling Shippo:
 
 Email uses Resend and SMS uses Twilio. Leave those environment variables blank to disable notifications.
 
+Email:
+
+```bash
+RESEND_API_KEY=your_resend_key
+NOTIFY_EMAIL_FROM=Package Tracker <packages@bmcpackages.com>
+NOTIFY_EMAIL_TO=bmcbreaks@gmail.com
+```
+
+Text messages:
+
+```bash
+TWILIO_ACCOUNT_SID=your_twilio_account_sid
+TWILIO_AUTH_TOKEN=your_twilio_auth_token
+TWILIO_FROM=+15551234567
+TWILIO_TO=+15559876543
+```
+
+`TWILIO_FROM` must be a Twilio phone number or approved sender. `TWILIO_TO` can be one number or a comma-separated list of numbers.
+
 ## Deploy on Render
 
 This app can run as one Render Web Service using Docker.
@@ -56,6 +75,10 @@ CHECK_INTERVAL_HOURS=0
 RESEND_API_KEY=your_resend_key
 NOTIFY_EMAIL_FROM=Package Tracker <packages@bmcpackages.com>
 NOTIFY_EMAIL_TO=bmcbreaks@gmail.com
+TWILIO_ACCOUNT_SID=your_twilio_account_sid
+TWILIO_AUTH_TOKEN=your_twilio_auth_token
+TWILIO_FROM=+15551234567
+TWILIO_TO=+15559876543
 ```
 
 `CHECK_INTERVAL_HOURS=0` disables the in-process timer. For production, use Render Cron so checks happen at a predictable time even if the web service restarts.
