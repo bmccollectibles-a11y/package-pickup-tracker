@@ -3,6 +3,9 @@ const addForm = document.querySelector("#addForm");
 const refreshButton = document.querySelector("#refreshButton");
 const notifyButton = document.querySelector("#notifyButton");
 const statusMessage = document.querySelector("#statusMessage");
+const recipientSettingsButton = document.querySelector("#recipientSettingsButton");
+const recipientDialog = document.querySelector("#recipientDialog");
+const closeRecipientDialog = document.querySelector("#closeRecipientDialog");
 const recipientForm = document.querySelector("#recipientForm");
 const recipientPhone = document.querySelector("#recipientPhone");
 const recipientList = document.querySelector("#recipientList");
@@ -339,6 +342,21 @@ notifyButton.addEventListener("click", async () => {
     setMessage(error.message, true);
   } finally {
     notifyButton.disabled = false;
+  }
+});
+
+recipientSettingsButton.addEventListener("click", () => {
+  recipientDialog.showModal();
+  recipientPhone.focus();
+});
+
+closeRecipientDialog.addEventListener("click", () => {
+  recipientDialog.close();
+});
+
+recipientDialog.addEventListener("click", (event) => {
+  if (event.target === recipientDialog) {
+    recipientDialog.close();
   }
 });
 
