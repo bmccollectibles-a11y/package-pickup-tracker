@@ -76,6 +76,9 @@ function publicPackage(pkg) {
     description: pkg.description || "",
     status: pkg.status || "pending",
     carrierStatus: cleanCarrierStatus(pkg.status, pkg.carrierStatus),
+    eta: pkg.eta || null,
+    originalEta: pkg.originalEta || null,
+    trackingSubstatus: pkg.trackingSubstatus || null,
     lastCheckedAt: pkg.lastCheckedAt || null,
     arrivedAt: pkg.arrivedAt || null,
     pickedUpAt: pkg.pickedUpAt || null,
@@ -89,6 +92,7 @@ function cleanCarrierStatus(status, carrierStatus) {
   const lower = value.toLowerCase();
   if (status === "picked_up") return "Picked up";
   if (status === "arrived" || lower.includes("delivered")) return "Delivered";
+  if (status === "out_for_delivery") return "Out for Delivery";
   if (status === "in_transit") return "In Transit";
   return value;
 }
@@ -101,6 +105,9 @@ function createPackage(trackingNumber, description) {
     description,
     status: "pending",
     carrierStatus: "Waiting for first check",
+    eta: null,
+    originalEta: null,
+    trackingSubstatus: null,
     lastCheckedAt: null,
     arrivedAt: null,
     pickedUpAt: null,
@@ -158,6 +165,9 @@ function interpretUpsTracking(payload) {
   return {
     status: isDelivered ? "arrived" : "in_transit",
     carrierStatus: description,
+    eta: null,
+    originalEta: null,
+    trackingSubstatus: null,
     raw: payload
   };
 }
@@ -172,6 +182,7 @@ function interpretShippoTracking(payload) {
     typeof trackingStatus === "string"
       ? trackingStatus
       : trackingStatus?.status || payload?.status || payload?.object_state || "UNKNOWN";
+  const substatus = typeof trackingStatus === "object" && trackingStatus ? trackingStatus.substatus?.code || null : null;
   const details =
     typeof trackingStatus === "object" && trackingStatus
       ? trackingStatus.status_details || trackingStatus.message || trackingStatus.status
@@ -179,10 +190,14 @@ function interpretShippoTracking(payload) {
   const normalizedStatus = String(status || "").toUpperCase();
   const normalizedDetails = String(details || "").toLowerCase();
   const delivered = normalizedStatus === "DELIVERED" || normalizedDetails.includes("delivered");
+  const outForDelivery = substatus === "out_for_delivery" || normalizedDetails.includes("out for delivery");
 
   return {
-    status: delivered ? "arrived" : "in_transit",
-    carrierStatus: delivered ? "Delivered" : "In Transit",
+    status: delivered ? "arrived" : outForDelivery ? "out_for_delivery" : "in_transit",
+    carrierStatus: delivered ? "Delivered" : outForDelivery ? "Out for Delivery" : "In Transit",
+    eta: payload?.eta || null,
+    originalEta: payload?.original_eta || null,
+    trackingSubstatus: substatus,
     raw: payload
   };
 }
@@ -226,6 +241,41 @@ function statusSnippet(text, terms) {
   return text.slice(0, 220).trim();
 }
 
+function updatePackageTrackingFields(pkg, result) {
+  pkg.status = result.status;
+  pkg.carrierStatus = result.carrierStatus;
+  pkg.eta = result.eta || null;
+  pkg.originalEta = result.originalEta || null;
+  pkg.trackingSubstatus = result.trackingSubstatus || null;
+}
+
+function packagesForPickupEmail(packages) {
+  return packages.filter((pkg) => (pkg.status === "arrived" || pkg.status === "out_for_delivery") && !pkg.pickedUpAt);
+}
+
+function emailStatusLabel(pkg) {
+  if (pkg.status === "arrived") return "Ready";
+  if (pkg.status === "out_for_delivery") return "Out for delivery";
+  return cleanCarrierStatus(pkg.status, pkg.carrierStatus) || "In Transit";
+}
+
+function formatEmailEta(value) {
+  if (!value) return "";
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "America/Los_Angeles"
+  }).format(new Date(value));
+}
+
+function attentionSummary(packages) {
+  const ready = packages.filter((pkg) => pkg.status === "arrived").length;
+  const outForDelivery = packages.filter((pkg) => pkg.status === "out_for_delivery").length;
+  return { ready, outForDelivery };
+}
+
 function interpretScrapedTracking(html) {
   const text = normalizePageText(html);
   const lower = text.toLowerCase();
@@ -260,14 +310,30 @@ function interpretScrapedTracking(html) {
   if (deliveredTerms.some((term) => lower.includes(term))) {
     return {
       status: "arrived",
-      carrierStatus: "Delivered"
+      carrierStatus: "Delivered",
+      eta: null,
+      originalEta: null,
+      trackingSubstatus: null
+    };
+  }
+
+  if (lower.includes("out for delivery")) {
+    return {
+      status: "out_for_delivery",
+      carrierStatus: "Out for Delivery",
+      eta: null,
+      originalEta: null,
+      trackingSubstatus: "out_for_delivery"
     };
   }
 
   if (transitTerms.some((term) => lower.includes(term))) {
     return {
       status: "in_transit",
-      carrierStatus: "In Transit"
+      carrierStatus: "In Transit",
+      eta: null,
+      originalEta: null,
+      trackingSubstatus: null
     };
   }
 
@@ -482,10 +548,10 @@ async function checkTrackingNumbersWithSharedBrowser(trackingNumbers) {
 
 async function checkTrackingNumber(trackingNumber, token) {
   if (trackingNumber.startsWith("TESTDELIVERED")) {
-    return { status: "arrived", carrierStatus: "Delivered to UPS Store" };
+    return { status: "arrived", carrierStatus: "Delivered to UPS Store", eta: null, originalEta: null, trackingSubstatus: null };
   }
   if (trackingNumber.startsWith("TESTTRANSIT")) {
-    return { status: "in_transit", carrierStatus: "In transit" };
+    return { status: "in_transit", carrierStatus: "In transit", eta: null, originalEta: null, trackingSubstatus: null };
   }
 
   if (checkerMode === "scrape") {
@@ -517,14 +583,21 @@ function packageRowsHtml(packages) {
       const note = pkg.description
         ? `<div style="color:#647067;font-size:13px;line-height:18px;margin-top:4px;">${escapeHtml(pkg.description)}</div>`
         : "";
+      const eta = pkg.eta
+        ? `<div style="color:#647067;font-size:13px;line-height:18px;margin-top:4px;">ETA ${escapeHtml(formatEmailEta(pkg.eta))}</div>`
+        : "";
+      const isOutForDelivery = pkg.status === "out_for_delivery";
+      const badgeBg = isOutForDelivery ? "#e0f2fe" : "#dcfce7";
+      const badgeColor = isOutForDelivery ? "#075985" : "#15803d";
       return `
         <tr>
           <td style="padding:16px 0;border-bottom:1px solid #e2e8df;">
             <div style="font-size:16px;line-height:22px;font-weight:800;color:#17211b;letter-spacing:0;">${escapeHtml(pkg.trackingNumber)}</div>
             ${note}
+            ${eta}
           </td>
           <td align="right" style="padding:16px 0;border-bottom:1px solid #e2e8df;">
-            <span style="display:inline-block;background:#dcfce7;color:#15803d;border-radius:999px;padding:6px 10px;font-size:13px;line-height:16px;font-weight:800;">Ready</span>
+            <span style="display:inline-block;background:${badgeBg};color:${badgeColor};border-radius:999px;padding:6px 10px;font-size:13px;line-height:16px;font-weight:800;">${emailStatusLabel(pkg)}</span>
           </td>
         </tr>
       `;
@@ -535,6 +608,7 @@ function packageRowsHtml(packages) {
 function buildPickupEmailHtml(packages) {
   const packageCount = packages.length;
   const plural = packageCount === 1 ? "package is" : "packages are";
+  const { ready, outForDelivery } = attentionSummary(packages);
 
   return `<!doctype html>
 <html>
@@ -543,17 +617,17 @@ function buildPickupEmailHtml(packages) {
       <tr>
         <td align="center">
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;background:#ffffff;border:1px solid #dfe6dc;border-radius:10px;overflow:hidden;">
-            <tr>
-              <td style="background:#0f766e;padding:24px 28px;">
-                <div style="color:#d7f8ee;font-size:13px;line-height:18px;font-weight:800;text-transform:uppercase;">Package Pickup Tracker</div>
-                <div style="color:#ffffff;font-size:28px;line-height:34px;font-weight:900;margin-top:8px;">${packageCount} ${plural} ready for pickup</div>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding:24px 28px 8px;">
-                <p style="margin:0;color:#334139;font-size:16px;line-height:24px;">The following shipment${packageCount === 1 ? "" : "s"} just changed to delivered/ready status. Please pick ${packageCount === 1 ? "it" : "them"} up and mark ${packageCount === 1 ? "it" : "them"} picked up in the tracker.</p>
-              </td>
-            </tr>
+	            <tr>
+	              <td style="background:#0f766e;padding:24px 28px;">
+	                <div style="color:#d7f8ee;font-size:13px;line-height:18px;font-weight:800;text-transform:uppercase;">Package Pickup Tracker</div>
+	                <div style="color:#ffffff;font-size:28px;line-height:34px;font-weight:900;margin-top:8px;">${packageCount} ${plural} ready or out for delivery</div>
+	              </td>
+	            </tr>
+	            <tr>
+	              <td style="padding:24px 28px 8px;">
+	                <p style="margin:0;color:#334139;font-size:16px;line-height:24px;">${ready} ready for pickup. ${outForDelivery} out for delivery. Use the ETA to time the pickup trip, then mark packages picked up after they are collected.</p>
+	              </td>
+	            </tr>
             <tr>
               <td style="padding:0 28px 8px;">
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
@@ -582,7 +656,11 @@ async function sendResendEmail(packages) {
   const from = process.env.NOTIFY_EMAIL_FROM;
   if (!apiKey || !to || !from) return { skipped: "email not configured" };
 
-  const lines = packages.map((pkg) => `${pkg.trackingNumber}${pkg.description ? ` - ${pkg.description}` : ""}`);
+  const { ready, outForDelivery } = attentionSummary(packages);
+  const lines = packages.map((pkg) => {
+    const eta = pkg.eta ? ` - ETA ${formatEmailEta(pkg.eta)}` : "";
+    return `${emailStatusLabel(pkg)}: ${pkg.trackingNumber}${pkg.description ? ` - ${pkg.description}` : ""}${eta}`;
+  });
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -592,8 +670,8 @@ async function sendResendEmail(packages) {
     body: JSON.stringify({
       from,
       to: to.split(",").map((item) => item.trim()).filter(Boolean),
-      subject: `${packages.length} package${packages.length === 1 ? "" : "s"} ready for pickup`,
-      text: `The following packages are marked arrived and need pickup:\n\n${lines.join("\n")}\n\nAfter pickup, mark each package as picked up in the tracker.`,
+      subject: `${ready} ready, ${outForDelivery} out for delivery`,
+      text: `Package pickup status:\n\n${lines.join("\n")}\n\nAfter pickup, mark each package as picked up in the tracker.`,
       html: buildPickupEmailHtml(packages)
     })
   });
@@ -611,8 +689,8 @@ async function sendTwilioSms(packages) {
   const to = process.env.TWILIO_TO;
   if (!sid || !token || !from || !to) return { skipped: "sms not configured" };
 
-  const body = `${packages.length} package${packages.length === 1 ? "" : "s"} ready for pickup: ${packages
-    .map((pkg) => pkg.trackingNumber)
+  const body = `Package pickup status: ${packages
+    .map((pkg) => `${emailStatusLabel(pkg)} ${pkg.trackingNumber}`)
     .join(", ")}`;
   const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
     method: "POST",
@@ -649,6 +727,7 @@ async function refreshPackages() {
     checkerMode === "api" && process.env.UPS_CLIENT_ID && process.env.UPS_CLIENT_SECRET ? await getUpsToken() : null;
   const now = new Date().toISOString();
   const newlyArrived = [];
+  const newlyOutForDelivery = [];
   const errors = [];
   const activePackages = packages.filter((pkg) => !pkg.pickedUpAt);
   const browserBatchResults =
@@ -664,10 +743,11 @@ async function refreshPackages() {
     try {
       const browserBatchResult = browserBatchResults?.get(pkg.trackingNumber);
       if (browserBatchResult?.error) throw browserBatchResult.error;
+      const previousStatus = pkg.status;
       const result = browserBatchResult?.result || (await checkTrackingNumber(pkg.trackingNumber, token));
       const wasNewArrival = result.status === "arrived" && !pkg.arrivedAt;
-      pkg.status = result.status;
-      pkg.carrierStatus = result.carrierStatus;
+      const wasNewOutForDelivery = result.status === "out_for_delivery" && previousStatus !== "out_for_delivery";
+      updatePackageTrackingFields(pkg, result);
       pkg.lastCheckedAt = now;
 
       if (result.status === "arrived" && !pkg.arrivedAt) {
@@ -677,15 +757,21 @@ async function refreshPackages() {
       if (wasNewArrival) {
         newlyArrived.push(pkg);
       }
+      if (wasNewOutForDelivery) {
+        newlyOutForDelivery.push(pkg);
+      }
     } catch (error) {
       pkg.status = "check_failed";
       pkg.carrierStatus = error.message;
+      pkg.eta = null;
+      pkg.originalEta = null;
+      pkg.trackingSubstatus = null;
       pkg.lastCheckedAt = now;
       errors.push({ trackingNumber: pkg.trackingNumber, message: error.message });
     }
   }
 
-  const readyForPickup = packages.filter((pkg) => pkg.status === "arrived" && !pkg.pickedUpAt);
+  const readyForPickup = packagesForPickupEmail(packages);
   const notificationResults = await notifyArrivals(readyForPickup);
   if (notificationResults.some((result) => result.sent)) {
     for (const pkg of readyForPickup) {
@@ -697,6 +783,7 @@ async function refreshPackages() {
   return {
     checkedAt: now,
     newlyArrived: newlyArrived.map(publicPackage),
+    newlyOutForDelivery: newlyOutForDelivery.map(publicPackage),
     notifiedReadyForPickup: readyForPickup.map(publicPackage),
     errors,
     notifications: notificationResults,
@@ -707,7 +794,7 @@ async function refreshPackages() {
 async function notifyReadyForPickup() {
   const packages = await loadPackages();
   const now = new Date().toISOString();
-  const readyForPickup = packages.filter((pkg) => pkg.status === "arrived" && !pkg.pickedUpAt);
+  const readyForPickup = packagesForPickupEmail(packages);
   const notificationResults = await notifyArrivals(readyForPickup);
 
   if (notificationResults.some((result) => result.sent)) {

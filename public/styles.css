@@ -131,7 +131,7 @@ input:focus {
 
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 14px;
   margin: 18px 0;
 }
@@ -185,7 +185,7 @@ input:focus {
 
 table {
   width: 100%;
-  min-width: 850px;
+  min-width: 980px;
   border-collapse: collapse;
 }
 
@@ -219,6 +219,15 @@ tr:last-child td {
   font-size: 13px;
 }
 
+.inline-note {
+  display: inline;
+}
+
+.eta {
+  font-weight: 800;
+  color: var(--ink);
+}
+
 .action-note {
   margin: 0 0 8px;
 }
@@ -242,6 +251,11 @@ tr:last-child td {
 .pending {
   background: #e0f2fe;
   color: #0369a1;
+}
+
+.out_for_delivery {
+  background: #fef3c7;
+  color: #92400e;
 }
 
 .check_failed {

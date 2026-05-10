@@ -40,6 +40,10 @@
           <p>Still active</p>
         </div>
         <div>
+          <span id="outForDeliveryCount">0</span>
+          <p>Out for delivery</p>
+        </div>
+        <div>
           <span id="pickedUpCount">0</span>
           <p>Picked up</p>
         </div>
@@ -48,6 +52,7 @@
       <section class="toolbar">
         <div class="tabs" role="tablist" aria-label="Package filters">
           <button class="tab active" data-filter="needs_pickup">Needs pickup</button>
+          <button class="tab" data-filter="out_for_delivery">Out for delivery</button>
           <button class="tab" data-filter="active">Active</button>
           <button class="tab" data-filter="picked_up">Picked up</button>
           <button class="tab" data-filter="all">All</button>
@@ -63,6 +68,7 @@
                 <th>Tracking</th>
                 <th>Status</th>
                 <th>Carrier update</th>
+                <th>ETA</th>
                 <th>Last checked</th>
                 <th>Action</th>
               </tr>

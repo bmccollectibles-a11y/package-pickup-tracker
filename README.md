@@ -34,7 +34,7 @@ SHIPPO_CARRIER=ups
 SHIPPO_TIMEOUT_MS=20000
 ```
 
-Shippo test keys work with Shippo mock tracking numbers such as `SHIPPO_DELIVERED` and `SHIPPO_TRANSIT`. Real UPS tracking numbers require a live Shippo key.
+Shippo test keys work with Shippo mock tracking numbers such as `SHIPPO_DELIVERED` and `SHIPPO_TRANSIT`. Real UPS tracking numbers require a live Shippo key. Shippo mode also stores carrier ETA and detects `out_for_delivery` substatus when the carrier provides it.
 
 You can still switch to the official UPS API later:
 

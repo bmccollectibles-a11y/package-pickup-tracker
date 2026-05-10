@@ -46,26 +46,45 @@ function fmtDate(value) {
   }).format(new Date(value));
 }
 
+function fmtEta(value) {
+  return value ? fmtDate(value) : "No ETA";
+}
+
 function statusLabel(status) {
   return {
     pending: "Pending",
     in_transit: "In transit",
+    out_for_delivery: "Out for delivery",
     arrived: "Ready",
     picked_up: "Picked up",
     check_failed: "Check failed"
   }[status] || status;
 }
 
+function etaSortValue(pkg) {
+  if (!pkg.eta) return Number.MAX_SAFE_INTEGER;
+  const time = new Date(pkg.eta).getTime();
+  return Number.isNaN(time) ? Number.MAX_SAFE_INTEGER : time;
+}
+
+function sortByEtaThenCreated(items) {
+  return [...items].sort((a, b) => etaSortValue(a) - etaSortValue(b) || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+}
+
 function visiblePackages() {
   if (filter === "needs_pickup") return packages.filter((pkg) => pkg.status === "arrived" && !pkg.pickedUpAt);
-  if (filter === "active") return packages.filter((pkg) => !pkg.pickedUpAt && pkg.status !== "arrived");
+  if (filter === "out_for_delivery") return sortByEtaThenCreated(packages.filter((pkg) => pkg.status === "out_for_delivery" && !pkg.pickedUpAt));
+  if (filter === "active") {
+    return sortByEtaThenCreated(packages.filter((pkg) => !pkg.pickedUpAt && pkg.status !== "arrived" && pkg.status !== "out_for_delivery"));
+  }
   if (filter === "picked_up") return packages.filter((pkg) => pkg.pickedUpAt);
-  return packages;
+  return sortByEtaThenCreated(packages);
 }
 
 function updateCounts() {
   document.querySelector("#pickupCount").textContent = packages.filter((pkg) => pkg.status === "arrived" && !pkg.pickedUpAt).length;
-  document.querySelector("#activeCount").textContent = packages.filter((pkg) => !pkg.pickedUpAt && pkg.status !== "arrived").length;
+  document.querySelector("#activeCount").textContent = packages.filter((pkg) => !pkg.pickedUpAt && pkg.status !== "arrived" && pkg.status !== "out_for_delivery").length;
+  document.querySelector("#outForDeliveryCount").textContent = packages.filter((pkg) => pkg.status === "out_for_delivery" && !pkg.pickedUpAt).length;
   document.querySelector("#pickedUpCount").textContent = packages.filter((pkg) => pkg.pickedUpAt).length;
 }
 
@@ -75,7 +94,7 @@ function render() {
   rows.innerHTML = "";
 
   if (!visible.length) {
-    rows.innerHTML = `<tr><td colspan="5" class="empty">No packages in this view.</td></tr>`;
+    rows.innerHTML = `<tr><td colspan="6" class="empty">No packages in this view.</td></tr>`;
     return;
   }
 
@@ -85,11 +104,20 @@ function render() {
       <td>${trackingMarkup(pkg)}</td>
       <td><span class="pill ${pkg.status}">${statusLabel(pkg.status)}</span></td>
       <td>${pkg.carrierStatus || ""}</td>
+      <td>${etaMarkup(pkg)}</td>
       <td>${fmtDate(pkg.lastCheckedAt)}</td>
       <td>${actionMarkup(pkg)}</td>
     `;
     rows.appendChild(tr);
   }
+}
+
+function etaMarkup(pkg) {
+  if (!pkg.eta) return `<span class="note inline-note">No ETA</span>`;
+  return `
+    <span class="eta">${fmtEta(pkg.eta)}</span>
+    ${pkg.originalEta && pkg.originalEta !== pkg.eta ? `<span class="note">Original ${fmtEta(pkg.originalEta)}</span>` : ""}
+  `;
 }
 
 function trackingMarkup(pkg) {
@@ -146,14 +174,18 @@ function escapeAttr(value) {
 }
 
 function notificationMessage(payload) {
-  const readyCount = payload.notifiedReadyForPickup?.length || 0;
+  const notified = payload.notifiedReadyForPickup || [];
+  const readyCount = notified.filter((pkg) => pkg.status === "arrived").length;
+  const outForDeliveryCount = notified.filter((pkg) => pkg.status === "out_for_delivery").length;
+  const totalCount = notified.length;
   const sent = payload.notifications?.filter((item) => item.sent).map((item) => item.sent) || [];
   const errors = payload.notifications?.filter((item) => item.error) || [];
 
-  if (!readyCount) return "No packages are currently ready for pickup.";
-  if (sent.includes("email")) return `Email sent for ${readyCount} ready package${readyCount === 1 ? "" : "s"}.`;
-  if (errors.length) return `Email failed for ${readyCount} ready package${readyCount === 1 ? "" : "s"}.`;
-  return `${readyCount} package${readyCount === 1 ? " is" : "s are"} ready for pickup, but email is not configured.`;
+  if (!totalCount) return "No packages are currently ready or out for delivery.";
+  const summary = `${readyCount} ready, ${outForDeliveryCount} out for delivery`;
+  if (sent.includes("email")) return `Email sent for ${summary}.`;
+  if (errors.length) return `Email failed for ${summary}.`;
+  return `${summary}, but email is not configured.`;
 }
 
 async function loadPackages() {
@@ -189,8 +221,9 @@ refreshButton.addEventListener("click", async () => {
     packages = payload.packages;
     const errorText = payload.errors.length ? ` ${payload.errors.length} check failed.` : "";
     const emailMessage = notificationMessage(payload);
+    const outForDeliveryText = payload.newlyOutForDelivery?.length ? ` ${payload.newlyOutForDelivery.length} newly out for delivery.` : "";
     setMessage(
-      `Refresh complete. ${payload.newlyArrived.length} newly ready. ${emailMessage}${errorText}`,
+      `Refresh complete. ${payload.newlyArrived.length} newly ready.${outForDeliveryText} ${emailMessage}${errorText}`,
       Boolean(payload.errors.length || payload.notifications?.some((item) => item.error))
     );
     render();
