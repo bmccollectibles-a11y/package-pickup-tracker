@@ -731,6 +731,18 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
+  if (req.method === "GET" && pathname === "/api/config") {
+    sendJson(res, 200, {
+      trackerMode: checkerMode,
+      scraperEngine,
+      shippoCarrier,
+      shippoConfigured: Boolean(process.env.SHIPPO_API_TOKEN),
+      upsApiConfigured: Boolean(process.env.UPS_CLIENT_ID && process.env.UPS_CLIENT_SECRET),
+      checkIntervalHours
+    });
+    return;
+  }
+
   if (req.method === "POST" && pathname === "/api/packages") {
     const body = await readJson(req);
     const numbers = normalizeTrackingNumbers(body.trackingNumbers);
