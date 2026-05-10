@@ -18,6 +18,7 @@ The default mode is public UPS page scraping, so it does not require a UPS accou
 TRACKER_MODE=scrape
 UPS_SCRAPER_ENGINE=browser
 UPS_BROWSER_CONCURRENCY=3
+UPS_NAVIGATION_TIMEOUT_MS=15000
 UPS_STATUS_TIMEOUT_MS=12000
 ```
 

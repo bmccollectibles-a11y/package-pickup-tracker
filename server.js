@@ -15,6 +15,7 @@ const checkerMode = (process.env.TRACKER_MODE || "scrape").toLowerCase();
 const scraperEngine = (process.env.UPS_SCRAPER_ENGINE || "browser").toLowerCase();
 const browserConcurrency = Number(process.env.UPS_BROWSER_CONCURRENCY || 3);
 const browserStatusTimeoutMs = Number(process.env.UPS_STATUS_TIMEOUT_MS || 12000);
+const browserNavigationTimeoutMs = Number(process.env.UPS_NAVIGATION_TIMEOUT_MS || 15000);
 const chromeExecutablePath =
   process.env.CHROME_EXECUTABLE_PATH ||
   (process.platform === "darwin" ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" : "");
@@ -268,7 +269,7 @@ function browserLaunchOptions() {
 
 async function readRenderedTrackingStatus(page, trackingNumber) {
   const url = scrapeUrlTemplate.replace("{trackingNumber}", encodeURIComponent(trackingNumber));
-  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+  await page.goto(url, { waitUntil: "commit", timeout: browserNavigationTimeoutMs });
 
   const startedAt = Date.now();
   let lastError = null;
@@ -283,6 +284,15 @@ async function readRenderedTrackingStatus(page, trackingNumber) {
   }
 
   throw lastError || new Error("Could not read a UPS status from the tracking page.");
+}
+
+async function readRenderedTrackingStatusWithRetry(page, trackingNumber) {
+  try {
+    return await readRenderedTrackingStatus(page, trackingNumber);
+  } catch (error) {
+    await page.waitForTimeout(1000);
+    return readRenderedTrackingStatus(page, trackingNumber);
+  }
 }
 
 async function mapWithConcurrency(items, limit, worker) {
@@ -362,7 +372,7 @@ async function scrapeUpsTrackingNumberWithBrowser(trackingNumber) {
       userAgent:
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     });
-    return readRenderedTrackingStatus(page, trackingNumber);
+    return readRenderedTrackingStatusWithRetry(page, trackingNumber);
   } finally {
     await browser.close();
   }
@@ -379,7 +389,7 @@ async function checkTrackingNumbersWithSharedBrowser(trackingNumbers) {
           "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
       });
       try {
-        return { trackingNumber, result: await readRenderedTrackingStatus(page, trackingNumber) };
+        return { trackingNumber, result: await readRenderedTrackingStatusWithRetry(page, trackingNumber) };
       } catch (error) {
         return { trackingNumber, error };
       } finally {
