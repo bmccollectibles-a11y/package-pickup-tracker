@@ -50,9 +50,10 @@ TWILIO_ACCOUNT_SID=your_twilio_account_sid
 TWILIO_AUTH_TOKEN=your_twilio_auth_token
 TWILIO_FROM=+15551234567
 TWILIO_TO=+15559876543
+ADMIN_PASSWORD=choose_a_private_admin_password
 ```
 
-`TWILIO_FROM` must be a Twilio phone number or approved sender. `TWILIO_TO` is optional after the first deploy: the dashboard has a Text recipients panel where phone numbers can be added or removed without changing Render environment variables. If no dashboard list has been saved yet, the app falls back to `TWILIO_TO`.
+`TWILIO_FROM` must be a Twilio phone number or approved sender. `TWILIO_TO` is optional after the first deploy: the dashboard has a password-protected Text recipients dialog where phone numbers can be added or removed without changing Render environment variables. If no dashboard list has been saved yet, the app falls back to `TWILIO_TO`.
 
 ## Deploy on Render
 
@@ -79,6 +80,7 @@ TWILIO_ACCOUNT_SID=your_twilio_account_sid
 TWILIO_AUTH_TOKEN=your_twilio_auth_token
 TWILIO_FROM=+15551234567
 TWILIO_TO=+15559876543
+ADMIN_PASSWORD=choose_a_private_admin_password
 ```
 
 `CHECK_INTERVAL_HOURS=0` disables the in-process timer. For production, use Render Cron so checks happen at a predictable time even if the web service restarts.

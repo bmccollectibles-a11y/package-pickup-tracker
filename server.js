@@ -13,6 +13,7 @@ const port = Number(process.env.PORT || 3000);
 const checkIntervalHours = Number(process.env.CHECK_INTERVAL_HOURS || 24);
 const shippoCarrier = (process.env.SHIPPO_CARRIER || "ups").toLowerCase();
 const shippoTimeoutMs = Number(process.env.SHIPPO_TIMEOUT_MS || 20000);
+const adminPassword = process.env.ADMIN_PASSWORD || "";
 
 const contentTypes = {
   ".html": "text/html; charset=utf-8",
@@ -67,6 +68,23 @@ async function readJson(req) {
 function sendJson(res, status, payload) {
   res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(payload));
+}
+
+function readBearerToken(req) {
+  const header = req.headers.authorization || "";
+  return header.startsWith("Bearer ") ? header.slice(7) : "";
+}
+
+function authorizeAdmin(req, res) {
+  if (!adminPassword) {
+    sendJson(res, 503, { error: "Admin password is not configured." });
+    return false;
+  }
+  if (readBearerToken(req) !== adminPassword) {
+    sendJson(res, 401, { error: "Enter the admin password to manage text recipients." });
+    return false;
+  }
+  return true;
 }
 
 function normalizeTrackingNumbers(input) {
@@ -518,6 +536,7 @@ async function handleApi(req, res, pathname) {
       trackerMode: "shippo",
       shippoCarrier,
       shippoConfigured: Boolean(process.env.SHIPPO_API_TOKEN),
+      adminConfigured: Boolean(adminPassword),
       smsConfigured: Boolean(
         process.env.TWILIO_ACCOUNT_SID &&
           process.env.TWILIO_AUTH_TOKEN &&
@@ -530,6 +549,7 @@ async function handleApi(req, res, pathname) {
   }
 
   if (req.method === "GET" && pathname === "/api/notification-settings") {
+    if (!authorizeAdmin(req, res)) return;
     const settings = await loadNotificationSettings();
     const recipients = settings.smsRecipients === null ? envSmsRecipients() : settings.smsRecipients;
     sendJson(res, 200, {
@@ -541,6 +561,7 @@ async function handleApi(req, res, pathname) {
   }
 
   if (req.method === "PUT" && pathname === "/api/notification-settings") {
+    if (!authorizeAdmin(req, res)) return;
     const body = await readJson(req);
     let smsRecipients;
     try {

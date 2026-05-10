@@ -6,6 +6,8 @@ const statusMessage = document.querySelector("#statusMessage");
 const recipientSettingsButton = document.querySelector("#recipientSettingsButton");
 const recipientDialog = document.querySelector("#recipientDialog");
 const closeRecipientDialog = document.querySelector("#closeRecipientDialog");
+const adminPasswordForm = document.querySelector("#adminPasswordForm");
+const adminPassword = document.querySelector("#adminPassword");
 const recipientForm = document.querySelector("#recipientForm");
 const recipientPhone = document.querySelector("#recipientPhone");
 const recipientList = document.querySelector("#recipientList");
@@ -14,6 +16,7 @@ const tabs = [...document.querySelectorAll(".tab")];
 let packages = [];
 let smsRecipients = [];
 let usingEnvSmsRecipients = false;
+let recipientAdminToken = window.sessionStorage.getItem("recipientAdminToken") || "";
 let filter = "active";
 let editingId = null;
 
@@ -43,6 +46,10 @@ async function api(path, options = {}) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function adminHeaders() {
+  return recipientAdminToken ? { Authorization: `Bearer ${recipientAdminToken}` } : {};
 }
 
 function fmtDate(value) {
@@ -227,6 +234,17 @@ function normalizePhoneNumber(value) {
 }
 
 function renderRecipients() {
+  const unlocked = Boolean(recipientAdminToken);
+  adminPasswordForm.hidden = unlocked;
+  recipientForm.hidden = !unlocked;
+  recipientList.hidden = !unlocked;
+
+  if (!unlocked) {
+    recipientSource.textContent = "Enter the admin password to view and edit text recipients.";
+    recipientList.innerHTML = "";
+    return;
+  }
+
   recipientSource.textContent = usingEnvSmsRecipients
     ? "Using the Render phone list until you save changes here."
     : "Changes save to the persistent Render disk.";
@@ -249,7 +267,7 @@ function renderRecipients() {
 }
 
 async function loadNotificationSettings() {
-  const payload = await api("/api/notification-settings");
+  const payload = await api("/api/notification-settings", { headers: adminHeaders() });
   smsRecipients = payload.smsRecipients || [];
   usingEnvSmsRecipients = Boolean(payload.usingEnvSmsRecipients);
   renderRecipients();
@@ -258,6 +276,7 @@ async function loadNotificationSettings() {
 async function saveSmsRecipients(nextRecipients, message) {
   const payload = await api("/api/notification-settings", {
     method: "PUT",
+    headers: adminHeaders(),
     body: JSON.stringify({ smsRecipients: nextRecipients })
   });
   smsRecipients = payload.smsRecipients || [];
@@ -347,7 +366,8 @@ notifyButton.addEventListener("click", async () => {
 
 recipientSettingsButton.addEventListener("click", () => {
   recipientDialog.showModal();
-  recipientPhone.focus();
+  renderRecipients();
+  (recipientAdminToken ? recipientPhone : adminPassword).focus();
 });
 
 closeRecipientDialog.addEventListener("click", () => {
@@ -357,6 +377,26 @@ closeRecipientDialog.addEventListener("click", () => {
 recipientDialog.addEventListener("click", (event) => {
   if (event.target === recipientDialog) {
     recipientDialog.close();
+  }
+});
+
+adminPasswordForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const password = adminPassword.value;
+  if (!password) return;
+  recipientAdminToken = password;
+  try {
+    await loadNotificationSettings();
+    window.sessionStorage.setItem("recipientAdminToken", recipientAdminToken);
+    adminPassword.value = "";
+    setMessage("Text recipients unlocked.");
+    recipientPhone.focus();
+  } catch (error) {
+    recipientAdminToken = "";
+    window.sessionStorage.removeItem("recipientAdminToken");
+    renderRecipients();
+    setMessage(error.message, true);
+    adminPassword.focus();
   }
 });
 
@@ -468,4 +508,5 @@ for (const tab of tabs) {
   });
 }
 
-Promise.all([loadPackages(), loadNotificationSettings()]).catch((error) => setMessage(error.message, true));
+renderRecipients();
+loadPackages().catch((error) => setMessage(error.message, true));

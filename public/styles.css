@@ -16,6 +16,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   background: var(--bg);
@@ -130,6 +134,7 @@ main {
   font-size: 13px;
 }
 
+.password-form,
 .recipient-form {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -447,6 +452,7 @@ tr:last-child td {
   }
 
   .form-row,
+  .password-form,
   .recipient-form,
   .summary-grid {
     grid-template-columns: 1fr;
