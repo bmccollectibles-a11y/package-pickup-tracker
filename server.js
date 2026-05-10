@@ -644,7 +644,12 @@ async function handleApi(req, res, pathname) {
 }
 
 async function serveStatic(res, pathname) {
-  const filePath = pathname === "/" ? join(publicDir, "index.html") : join(publicDir, pathname);
+  const pageAliases = {
+    "/": "index.html",
+    "/privacy": "privacy.html",
+    "/terms": "terms.html"
+  };
+  const filePath = join(publicDir, pageAliases[pathname] || pathname);
   const resolved = resolve(filePath);
   if (!resolved.startsWith(publicDir)) {
     res.writeHead(403);
