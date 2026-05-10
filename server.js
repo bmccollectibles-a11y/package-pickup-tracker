@@ -13,9 +13,10 @@ const port = Number(process.env.PORT || 3000);
 const checkIntervalHours = Number(process.env.CHECK_INTERVAL_HOURS || 24);
 const checkerMode = (process.env.TRACKER_MODE || "scrape").toLowerCase();
 const scraperEngine = (process.env.UPS_SCRAPER_ENGINE || "browser").toLowerCase();
-const browserConcurrency = Number(process.env.UPS_BROWSER_CONCURRENCY || 3);
-const browserStatusTimeoutMs = Number(process.env.UPS_STATUS_TIMEOUT_MS || 12000);
-const browserNavigationTimeoutMs = Number(process.env.UPS_NAVIGATION_TIMEOUT_MS || 15000);
+const browserConcurrency = Number(process.env.UPS_BROWSER_CONCURRENCY || 2);
+const browserStatusTimeoutMs = Number(process.env.UPS_STATUS_TIMEOUT_MS || 20000);
+const browserNavigationTimeoutMs = Number(process.env.UPS_NAVIGATION_TIMEOUT_MS || 25000);
+const browserRetryCount = Number(process.env.UPS_BROWSER_RETRY_COUNT || 3);
 const chromeExecutablePath =
   process.env.CHROME_EXECUTABLE_PATH ||
   (process.platform === "darwin" ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" : "");
@@ -287,12 +288,18 @@ async function readRenderedTrackingStatus(page, trackingNumber) {
 }
 
 async function readRenderedTrackingStatusWithRetry(page, trackingNumber) {
-  try {
-    return await readRenderedTrackingStatus(page, trackingNumber);
-  } catch (error) {
-    await page.waitForTimeout(1000);
-    return readRenderedTrackingStatus(page, trackingNumber);
+  let lastError = null;
+  for (let attempt = 1; attempt <= browserRetryCount; attempt += 1) {
+    try {
+      return await readRenderedTrackingStatus(page, trackingNumber);
+    } catch (error) {
+      lastError = error;
+      if (attempt === browserRetryCount) break;
+      await page.goto("about:blank", { waitUntil: "commit", timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(1000 * attempt);
+    }
   }
+  throw lastError;
 }
 
 async function mapWithConcurrency(items, limit, worker) {
