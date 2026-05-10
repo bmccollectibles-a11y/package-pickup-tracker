@@ -14,13 +14,26 @@ function setMessage(message, isError = false) {
 }
 
 async function api(path, options = {}) {
-  const response = await fetch(path, {
-    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
-    ...options
-  });
-  const payload = await response.json();
-  if (!response.ok) throw new Error(payload.error || "Request failed");
-  return payload;
+  const timeoutMs = options.timeoutMs || 30000;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(path, {
+      headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+      ...options,
+      signal: controller.signal
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "Request failed");
+    return payload;
+  } catch (error) {
+    if (error.name === "AbortError") {
+      throw new Error("The status check is taking too long. Verify TRACKER_MODE in Render, then try again.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function fmtDate(value) {
@@ -170,9 +183,9 @@ addForm.addEventListener("submit", async (event) => {
 
 refreshButton.addEventListener("click", async () => {
   refreshButton.disabled = true;
-  setMessage("Checking UPS statuses...");
+  setMessage("Checking package statuses...");
   try {
-    const payload = await api("/api/refresh", { method: "POST" });
+    const payload = await api("/api/refresh", { method: "POST", timeoutMs: 75000 });
     packages = payload.packages;
     const errorText = payload.errors.length ? ` ${payload.errors.length} check failed.` : "";
     const emailMessage = notificationMessage(payload);
