@@ -13,6 +13,7 @@ const port = Number(process.env.PORT || 3000);
 const checkIntervalHours = Number(process.env.CHECK_INTERVAL_HOURS || 24);
 const checkerMode = (process.env.TRACKER_MODE || "scrape").toLowerCase();
 const scraperEngine = (process.env.UPS_SCRAPER_ENGINE || "browser").toLowerCase();
+const shippoCarrier = (process.env.SHIPPO_CARRIER || "ups").toLowerCase();
 const browserConcurrency = Number(process.env.UPS_BROWSER_CONCURRENCY || 2);
 const browserStatusTimeoutMs = Number(process.env.UPS_STATUS_TIMEOUT_MS || 20000);
 const browserNavigationTimeoutMs = Number(process.env.UPS_NAVIGATION_TIMEOUT_MS || 25000);
@@ -156,6 +157,31 @@ function interpretUpsTracking(payload) {
   return {
     status: isDelivered ? "arrived" : "in_transit",
     carrierStatus: description,
+    raw: payload
+  };
+}
+
+function shippoCarrierForTrackingNumber(trackingNumber) {
+  return trackingNumber.startsWith("SHIPPO_") ? "shippo" : shippoCarrier;
+}
+
+function interpretShippoTracking(payload) {
+  const trackingStatus = payload?.tracking_status;
+  const status =
+    typeof trackingStatus === "string"
+      ? trackingStatus
+      : trackingStatus?.status || payload?.status || payload?.object_state || "UNKNOWN";
+  const details =
+    typeof trackingStatus === "object" && trackingStatus
+      ? trackingStatus.status_details || trackingStatus.message || trackingStatus.status
+      : status;
+  const normalizedStatus = String(status || "").toUpperCase();
+  const normalizedDetails = String(details || "").toLowerCase();
+  const delivered = normalizedStatus === "DELIVERED" || normalizedDetails.includes("delivered");
+
+  return {
+    status: delivered ? "arrived" : "in_transit",
+    carrierStatus: delivered ? "Delivered" : "In Transit",
     raw: payload
   };
 }
@@ -339,6 +365,41 @@ async function checkUpsTrackingNumber(trackingNumber, token) {
   return interpretUpsTracking(await response.json());
 }
 
+async function checkShippoTrackingNumber(trackingNumber) {
+  const token = process.env.SHIPPO_API_TOKEN;
+  if (!token) {
+    throw new Error("Shippo API token is not configured. Add SHIPPO_API_TOKEN to enable Shippo checks.");
+  }
+
+  const carrier = shippoCarrierForTrackingNumber(trackingNumber);
+  const headers = {
+    Authorization: `ShippoToken ${token}`,
+    Accept: "application/json"
+  };
+  const response = trackingNumber.startsWith("SHIPPO_")
+    ? await fetch("https://api.goshippo.com/tracks/", {
+        method: "POST",
+        headers: {
+          ...headers,
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        body: new URLSearchParams({
+          carrier,
+          tracking_number: trackingNumber,
+          metadata: "Package Pickup Tracker test"
+        })
+      })
+    : await fetch(`https://api.goshippo.com/tracks/${encodeURIComponent(carrier)}/${encodeURIComponent(trackingNumber)}`, {
+        headers
+      });
+
+  if (!response.ok) {
+    throw new Error(`Shippo tracking failed for ${trackingNumber}: ${response.status} ${await response.text()}`);
+  }
+
+  return interpretShippoTracking(await response.json());
+}
+
 async function scrapeUpsTrackingNumber(trackingNumber) {
   if (scraperEngine === "browser") {
     return scrapeUpsTrackingNumberWithBrowser(trackingNumber);
@@ -420,6 +481,10 @@ async function checkTrackingNumber(trackingNumber, token) {
 
   if (checkerMode === "scrape") {
     return scrapeUpsTrackingNumber(trackingNumber);
+  }
+
+  if (checkerMode === "shippo") {
+    return checkShippoTrackingNumber(trackingNumber);
   }
 
   if (!token) {

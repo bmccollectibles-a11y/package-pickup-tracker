@@ -25,7 +25,17 @@ UPS_BROWSER_RETRY_COUNT=3
 
 Browser scraping uses Chrome so UPS can render the tracking status before the app reads it. Refreshes reuse one browser and check up to `UPS_BROWSER_CONCURRENCY` packages at once. UPS can hang before navigation commits, so the browser scraper retries each package up to `UPS_BROWSER_RETRY_COUNT` times.
 
-If UPS blocks or changes the public page, the app will mark that package as `Check failed` with the error text. You can still switch to the official UPS API later:
+If UPS blocks or changes the public page, the app will mark that package as `Check failed` with the error text. You can also switch to Shippo while waiting for official UPS API access:
+
+```bash
+TRACKER_MODE=shippo
+SHIPPO_API_TOKEN=your_shippo_token
+SHIPPO_CARRIER=ups
+```
+
+Shippo test keys work with Shippo mock tracking numbers such as `SHIPPO_DELIVERED` and `SHIPPO_TRANSIT`. Real UPS tracking numbers require a live Shippo key.
+
+You can still switch to the official UPS API later:
 
 ```bash
 TRACKER_MODE=api
@@ -59,7 +69,9 @@ This app can run as one Render Web Service. Use Docker so the hosted app has a b
 
 ```bash
 DATA_DIR=/var/data
-TRACKER_MODE=scrape
+TRACKER_MODE=shippo
+SHIPPO_API_TOKEN=your_shippo_token
+SHIPPO_CARRIER=ups
 UPS_SCRAPER_ENGINE=browser
 CHECK_INTERVAL_HOURS=0
 RESEND_API_KEY=your_resend_key
