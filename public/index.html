@@ -10,7 +10,7 @@
     <header class="topbar">
       <div>
         <h1>Package Pickup Tracker</h1>
-        <p>Track incoming sealed case shipments and keep pickup work visible.</p>
+        <p>Track incoming sealed case shipments and keep receiving work visible.</p>
       </div>
       <div class="header-actions">
         <button id="notifyButton" class="secondary">Send pickup alert</button>
@@ -30,6 +30,18 @@
         </form>
       </section>
 
+      <section class="settings-panel" aria-labelledby="textRecipientsTitle">
+        <div>
+          <h2 id="textRecipientsTitle">Text recipients</h2>
+          <p id="recipientSource" class="settings-note"></p>
+        </div>
+        <form id="recipientForm" class="recipient-form">
+          <input id="recipientPhone" name="recipientPhone" inputmode="tel" autocomplete="tel" placeholder="+1 phone number">
+          <button class="secondary" type="submit">Add recipient</button>
+        </form>
+        <div id="recipientList" class="recipient-list" aria-live="polite"></div>
+      </section>
+
       <section class="summary-grid" aria-live="polite">
         <div>
           <span id="pickupCount">0</span>
@@ -45,7 +57,7 @@
         </div>
         <div>
           <span id="pickedUpCount">0</span>
-          <p>Picked up</p>
+          <p>Received</p>
         </div>
       </section>
 
@@ -54,7 +66,7 @@
           <button class="tab active" data-filter="active">Active</button>
           <button class="tab" data-filter="needs_pickup">Needs pickup</button>
           <button class="tab" data-filter="out_for_delivery">Out for delivery</button>
-          <button class="tab" data-filter="picked_up">Picked up</button>
+          <button class="tab" data-filter="picked_up">Received</button>
           <button class="tab" data-filter="all">All</button>
         </div>
         <p id="statusMessage"></p>

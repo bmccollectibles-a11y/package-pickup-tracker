@@ -1,6 +1,6 @@
 # Package Pickup Tracker
 
-A small web app for tracking incoming packages through Shippo, checking whether they are ready for pickup, and marking them picked up.
+A small web app for tracking incoming packages through Shippo, checking whether they are ready for pickup, and marking them received.
 
 ## Run
 
@@ -52,7 +52,7 @@ TWILIO_FROM=+15551234567
 TWILIO_TO=+15559876543
 ```
 
-`TWILIO_FROM` must be a Twilio phone number or approved sender. `TWILIO_TO` can be one number or a comma-separated list of numbers.
+`TWILIO_FROM` must be a Twilio phone number or approved sender. `TWILIO_TO` is optional after the first deploy: the dashboard has a Text recipients panel where phone numbers can be added or removed without changing Render environment variables. If no dashboard list has been saved yet, the app falls back to `TWILIO_TO`.
 
 ## Deploy on Render
 

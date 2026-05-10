@@ -3,8 +3,14 @@ const addForm = document.querySelector("#addForm");
 const refreshButton = document.querySelector("#refreshButton");
 const notifyButton = document.querySelector("#notifyButton");
 const statusMessage = document.querySelector("#statusMessage");
+const recipientForm = document.querySelector("#recipientForm");
+const recipientPhone = document.querySelector("#recipientPhone");
+const recipientList = document.querySelector("#recipientList");
+const recipientSource = document.querySelector("#recipientSource");
 const tabs = [...document.querySelectorAll(".tab")];
 let packages = [];
+let smsRecipients = [];
+let usingEnvSmsRecipients = false;
 let filter = "active";
 let editingId = null;
 
@@ -56,7 +62,7 @@ function statusLabel(status) {
     in_transit: "In transit",
     out_for_delivery: "Out for delivery",
     arrived: "Ready",
-    picked_up: "Picked up",
+    picked_up: "Received",
     check_failed: "Check failed"
   }[status] || status;
 }
@@ -180,14 +186,14 @@ function actionMarkup(pkg) {
 
   if (pkg.pickedUpAt) {
     return `
-      <span class="note action-note">Picked up ${fmtDate(pkg.pickedUpAt)}</span>
-      <button class="secondary" data-unpickup="${pkg.id}">Mark not picked up</button>
+      <span class="note action-note">Received ${fmtDate(pkg.pickedUpAt)}</span>
+      <button class="secondary" data-unpickup="${pkg.id}">Mark not received</button>
       ${commonActions}
     `;
   }
 
   return `
-    <button class="secondary" data-pickup="${pkg.id}">Mark picked up</button>
+    <button class="secondary" data-pickup="${pkg.id}">Mark received</button>
     ${commonActions}
   `;
 }
@@ -203,6 +209,58 @@ function escapeHtml(value) {
 
 function escapeAttr(value) {
   return escapeHtml(value).replaceAll("`", "&#96;");
+}
+
+function normalizePhoneNumber(value) {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return "";
+  const compact = trimmed.replace(/[()\s.-]/g, "");
+  const withCountryCode =
+    /^\d{10}$/.test(compact) ? `+1${compact}` : /^1\d{10}$/.test(compact) ? `+${compact}` : compact;
+  if (!/^\+[1-9]\d{7,14}$/.test(withCountryCode)) {
+    throw new Error(`Enter ${trimmed} as a valid phone number, like +14085551212.`);
+  }
+  return withCountryCode;
+}
+
+function renderRecipients() {
+  recipientSource.textContent = usingEnvSmsRecipients
+    ? "Using the Render phone list until you save changes here."
+    : "Changes save to the persistent Render disk.";
+
+  if (!smsRecipients.length) {
+    recipientList.innerHTML = `<span class="note inline-note">No text recipients configured.</span>`;
+    return;
+  }
+
+  recipientList.innerHTML = smsRecipients
+    .map(
+      (recipient) => `
+        <span class="recipient-chip">
+          ${escapeHtml(recipient)}
+          <button type="button" aria-label="Remove ${escapeAttr(recipient)}" data-remove-recipient="${escapeAttr(recipient)}">x</button>
+        </span>
+      `
+    )
+    .join("");
+}
+
+async function loadNotificationSettings() {
+  const payload = await api("/api/notification-settings");
+  smsRecipients = payload.smsRecipients || [];
+  usingEnvSmsRecipients = Boolean(payload.usingEnvSmsRecipients);
+  renderRecipients();
+}
+
+async function saveSmsRecipients(nextRecipients, message) {
+  const payload = await api("/api/notification-settings", {
+    method: "PUT",
+    body: JSON.stringify({ smsRecipients: nextRecipients })
+  });
+  smsRecipients = payload.smsRecipients || [];
+  usingEnvSmsRecipients = false;
+  renderRecipients();
+  setMessage(message);
 }
 
 function notificationMessage(payload) {
@@ -270,7 +328,7 @@ refreshButton.addEventListener("click", async () => {
 
 notifyButton.addEventListener("click", async () => {
   notifyButton.disabled = true;
-  setMessage("Sending pickup email...");
+  setMessage("Sending pickup alert...");
   try {
     const payload = await api("/api/notify", { method: "POST" });
     packages = payload.packages;
@@ -281,6 +339,38 @@ notifyButton.addEventListener("click", async () => {
     setMessage(error.message, true);
   } finally {
     notifyButton.disabled = false;
+  }
+});
+
+recipientForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    const recipient = normalizePhoneNumber(recipientPhone.value);
+    if (!recipient) return;
+    if (smsRecipients.includes(recipient)) {
+      setMessage("That text recipient is already on the list.");
+      recipientPhone.value = "";
+      return;
+    }
+    await saveSmsRecipients([...smsRecipients, recipient], "Text recipient added.");
+    recipientPhone.value = "";
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+});
+
+recipientList.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-remove-recipient]");
+  if (!button) return;
+  button.disabled = true;
+  try {
+    await saveSmsRecipients(
+      smsRecipients.filter((recipient) => recipient !== button.dataset.removeRecipient),
+      "Text recipient removed."
+    );
+  } catch (error) {
+    setMessage(error.message, true);
+    button.disabled = false;
   }
 });
 
@@ -344,7 +434,7 @@ rows.addEventListener("click", async (event) => {
   const id = button.dataset.pickup || button.dataset.unpickup;
   try {
     await api(`/api/packages/${id}/${isUnpickup ? "unpickup" : "pickup"}`, { method: "POST" });
-    setMessage(isUnpickup ? "Package marked not picked up." : "Package marked picked up.");
+    setMessage(isUnpickup ? "Package marked not received." : "Package marked received.");
     await loadPackages();
   } catch (error) {
     setMessage(error.message, true);
@@ -360,4 +450,4 @@ for (const tab of tabs) {
   });
 }
 
-loadPackages().catch((error) => setMessage(error.message, true));
+Promise.all([loadPackages(), loadNotificationSettings()]).catch((error) => setMessage(error.message, true));

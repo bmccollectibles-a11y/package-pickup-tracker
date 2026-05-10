@@ -57,14 +57,75 @@ main {
 }
 
 .entry-panel,
+.settings-panel,
 .table-wrap {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 8px;
 }
 
-.entry-panel {
+.entry-panel,
+.settings-panel {
   padding: 18px;
+}
+
+.settings-panel {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(300px, 520px);
+  gap: 14px 18px;
+  align-items: start;
+  margin-top: 14px;
+}
+
+.settings-panel h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.settings-note {
+  font-size: 13px;
+}
+
+.recipient-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+}
+
+.recipient-list {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 34px;
+}
+
+.recipient-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  border: 1px solid #cdd5c9;
+  border-radius: 999px;
+  padding: 4px 6px 4px 10px;
+  background: #f8faf7;
+  font-weight: 800;
+}
+
+.recipient-chip button {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 999px;
+  background: #e9eee6;
+  color: #263026;
+  cursor: pointer;
+  font-weight: 900;
+  line-height: 1;
 }
 
 label {
@@ -329,6 +390,8 @@ tr:last-child td {
   }
 
   .form-row,
+  .recipient-form,
+  .settings-panel,
   .summary-grid {
     grid-template-columns: 1fr;
   }

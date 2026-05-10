@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { readFile, writeFile, mkdir, stat } from "node:fs/promises";
+import { readFile, writeFile, mkdir, stat, rename } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { extname, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -8,6 +8,7 @@ const root = resolve(".");
 const publicDir = join(root, "public");
 const dataDir = resolve(process.env.DATA_DIR || join(root, "data"));
 const dataFile = join(dataDir, "packages.json");
+const notificationSettingsFile = join(dataDir, "notification-settings.json");
 const port = Number(process.env.PORT || 3000);
 const checkIntervalHours = Number(process.env.CHECK_INTERVAL_HOURS || 24);
 const shippoCarrier = (process.env.SHIPPO_CARRIER || "ups").toLowerCase();
@@ -36,6 +37,26 @@ async function savePackages(packages) {
   await writeFile(dataFile, JSON.stringify(packages, null, 2));
 }
 
+async function loadNotificationSettings() {
+  try {
+    const raw = await readFile(notificationSettingsFile, "utf8");
+    const parsed = JSON.parse(raw);
+    return {
+      smsRecipients: Array.isArray(parsed.smsRecipients) ? normalizePhoneNumbers(parsed.smsRecipients) : null
+    };
+  } catch (error) {
+    if (error.code === "ENOENT") return { smsRecipients: null };
+    throw error;
+  }
+}
+
+async function saveNotificationSettings(settings) {
+  await mkdir(dataDir, { recursive: true });
+  const tempFile = `${notificationSettingsFile}.${randomUUID()}.tmp`;
+  await writeFile(tempFile, JSON.stringify(settings, null, 2));
+  await rename(tempFile, notificationSettingsFile);
+}
+
 async function readJson(req) {
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
@@ -53,6 +74,32 @@ function normalizeTrackingNumbers(input) {
     .split(/[\s,;]+/)
     .map((value) => value.trim().toUpperCase())
     .filter(Boolean);
+}
+
+function normalizePhoneNumber(value) {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return "";
+  const compact = trimmed.replace(/[()\s.-]/g, "");
+  const withCountryCode =
+    /^\d{10}$/.test(compact) ? `+1${compact}` : /^1\d{10}$/.test(compact) ? `+${compact}` : compact;
+  if (!/^\+[1-9]\d{7,14}$/.test(withCountryCode)) {
+    throw new Error(`Enter ${trimmed} as a valid phone number, like +14085551212.`);
+  }
+  return withCountryCode;
+}
+
+function normalizePhoneNumbers(input) {
+  const values = Array.isArray(input) ? input : String(input || "").split(/[\s,;]+/);
+  return [...new Set(values.map(normalizePhoneNumber).filter(Boolean))];
+}
+
+function envSmsRecipients() {
+  return normalizePhoneNumbers(process.env.TWILIO_TO || "");
+}
+
+async function smsRecipients() {
+  const settings = await loadNotificationSettings();
+  return settings.smsRecipients === null ? envSmsRecipients() : settings.smsRecipients;
 }
 
 function publicPackage(pkg) {
@@ -76,7 +123,7 @@ function publicPackage(pkg) {
 function cleanCarrierStatus(status, carrierStatus) {
   const value = String(carrierStatus || "");
   const lower = value.toLowerCase();
-  if (status === "picked_up") return "Picked up";
+  if (status === "picked_up") return "Received";
   if (status === "arrived" || lower.includes("delivered")) return "Delivered";
   if (status === "out_for_delivery") return "Out for Delivery";
   if (status === "in_transit") return "In Transit";
@@ -277,7 +324,7 @@ function buildPickupEmailHtml(packages) {
 	            </tr>
 	            <tr>
 	              <td style="padding:24px 28px 8px;">
-	                <p style="margin:0;color:#334139;font-size:16px;line-height:24px;">${ready} ready for pickup. ${outForDelivery} out for delivery. Use the ETA to time the pickup trip, then mark packages picked up after they are collected.</p>
+	                <p style="margin:0;color:#334139;font-size:16px;line-height:24px;">${ready} ready for pickup. ${outForDelivery} out for delivery. Use the ETA to time the pickup trip, then mark packages received after they are collected.</p>
 	              </td>
 	            </tr>
             <tr>
@@ -290,7 +337,7 @@ function buildPickupEmailHtml(packages) {
             <tr>
               <td style="padding:16px 28px 28px;">
                 <div style="background:#f0fdfa;border:1px solid #99f6e4;border-radius:8px;padding:14px 16px;color:#134e4a;font-size:14px;line-height:21px;">
-                  After pickup, mark each package as picked up so future checks ignore it.
+                  After pickup, mark each package as received so future checks ignore it.
                 </div>
               </td>
             </tr>
@@ -323,7 +370,7 @@ async function sendResendEmail(packages) {
       from,
       to: to.split(",").map((item) => item.trim()).filter(Boolean),
       subject: `${ready} ready, ${outForDelivery} out for delivery`,
-      text: `Package pickup status:\n\n${lines.join("\n")}\n\nAfter pickup, mark each package as picked up in the tracker.`,
+      text: `Package pickup status:\n\n${lines.join("\n")}\n\nAfter pickup, mark each package as received in the tracker.`,
       html: buildPickupEmailHtml(packages)
     })
   });
@@ -338,10 +385,7 @@ async function sendTwilioSms(packages) {
   const sid = process.env.TWILIO_ACCOUNT_SID;
   const token = process.env.TWILIO_AUTH_TOKEN;
   const from = process.env.TWILIO_FROM;
-  const recipients = String(process.env.TWILIO_TO || "")
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
+  const recipients = await smsRecipients();
   if (!sid || !token || !from || !recipients.length) return { skipped: "sms not configured" };
 
   const { ready, outForDelivery } = attentionSummary(packages);
@@ -469,6 +513,7 @@ async function handleApi(req, res, pathname) {
   }
 
   if (req.method === "GET" && pathname === "/api/config") {
+    const configuredSmsRecipients = await smsRecipients();
     sendJson(res, 200, {
       trackerMode: "shippo",
       shippoCarrier,
@@ -477,10 +522,35 @@ async function handleApi(req, res, pathname) {
         process.env.TWILIO_ACCOUNT_SID &&
           process.env.TWILIO_AUTH_TOKEN &&
           process.env.TWILIO_FROM &&
-          process.env.TWILIO_TO
+          configuredSmsRecipients.length
       ),
       checkIntervalHours
     });
+    return;
+  }
+
+  if (req.method === "GET" && pathname === "/api/notification-settings") {
+    const settings = await loadNotificationSettings();
+    const recipients = settings.smsRecipients === null ? envSmsRecipients() : settings.smsRecipients;
+    sendJson(res, 200, {
+      smsRecipients: recipients,
+      usingEnvSmsRecipients: settings.smsRecipients === null && recipients.length > 0,
+      twilioConfigured: Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM)
+    });
+    return;
+  }
+
+  if (req.method === "PUT" && pathname === "/api/notification-settings") {
+    const body = await readJson(req);
+    let smsRecipients;
+    try {
+      smsRecipients = normalizePhoneNumbers(body.smsRecipients || []);
+    } catch (error) {
+      sendJson(res, 400, { error: error.message });
+      return;
+    }
+    await saveNotificationSettings({ smsRecipients });
+    sendJson(res, 200, { smsRecipients });
     return;
   }
 
