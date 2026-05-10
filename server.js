@@ -22,7 +22,7 @@ const chromeExecutablePath =
   (process.platform === "darwin" ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" : "");
 const scrapeUrlTemplate =
   process.env.UPS_SCRAPE_URL_TEMPLATE ||
-  "https://www.ups.com/track?loc=en_US&tracknum={trackingNumber}&requester=ST/trackdetails";
+  "https://www.ups.com/track?track=yes&trackNums={trackingNumber}&loc=en_US&requester=ST/trackdetails";
 const require = createRequire(import.meta.url);
 
 const contentTypes = {
