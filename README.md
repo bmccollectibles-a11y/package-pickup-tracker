@@ -43,7 +43,7 @@ Email uses Resend and SMS uses Twilio. Leave those environment variables blank t
 
 ## Deploy on Render
 
-This app can run as one Render Web Service. Use Docker so the hosted app has a browser available for UPS scraping.
+This app can run as one Render Web Service. Use Docker so the hosted app has a browser available for UPS scraping. Keep the Playwright package version in `package.json` matched to the Playwright Docker image version in `Dockerfile`.
 
 1. Push this project to a GitHub repository.
 2. In Render, create a **New Web Service** from that repository.
