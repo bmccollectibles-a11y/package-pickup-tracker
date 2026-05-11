@@ -13,6 +13,13 @@ const recipientForm = document.querySelector("#recipientForm");
 const recipientPhone = document.querySelector("#recipientPhone");
 const recipientList = document.querySelector("#recipientList");
 const recipientSource = document.querySelector("#recipientSource");
+const receiveDialog = document.querySelector("#receiveDialog");
+const closeReceiveDialog = document.querySelector("#closeReceiveDialog");
+const cancelReceiveButton = document.querySelector("#cancelReceiveButton");
+const receiveForm = document.querySelector("#receiveForm");
+const receiveTrackingNumber = document.querySelector("#receiveTrackingNumber");
+const receivedBy = document.querySelector("#receivedBy");
+const receivedNote = document.querySelector("#receivedNote");
 const tabs = [...document.querySelectorAll(".tab")];
 let packages = [];
 let smsRecipients = [];
@@ -21,6 +28,7 @@ let config = { smsEnabled: false, smsConfigured: false };
 let recipientAdminToken = window.sessionStorage.getItem("recipientAdminToken") || "";
 let filter = "active";
 let editingId = null;
+let pendingReceiveId = null;
 
 function setMessage(message, isError = false) {
   statusMessage.textContent = message;
@@ -190,6 +198,7 @@ function trackingMarkup(pkg) {
       <span class="tracking">${pkg.trackingNumber}</span>
       <div class="edit-row">
         <input class="description-input" data-description-input="${pkg.id}" value="${escapeAttr(pkg.description || "")}" placeholder="Description">
+        <input class="seller-input" data-seller-input="${pkg.id}" value="${escapeAttr(pkg.seller || "")}" placeholder="Seller (optional)">
         <select class="carrier-input" data-carrier-input="${pkg.id}" aria-label="Carrier">
           ${carrierOptionMarkup(pkg.carrier || "auto")}
         </select>
@@ -204,6 +213,7 @@ function trackingMarkup(pkg) {
       <span class="tracking">${pkg.trackingNumber}</span>
       <span class="carrier-badge">${packageCarrierLabel(pkg)}</span>
     </span>
+    ${pkg.seller ? `<span class="note">Seller: ${escapeHtml(pkg.seller)}</span>` : ""}
     ${pkg.description ? `<span class="note">${escapeHtml(pkg.description)}</span>` : ""}
   `;
 }
@@ -234,7 +244,7 @@ function actionMarkup(pkg) {
 
   if (pkg.pickedUpAt) {
     return `
-      <span class="note action-note">Received ${fmtDate(pkg.pickedUpAt)}</span>
+      <span class="note action-note">${receivedSummary(pkg)}</span>
       <div class="row-actions desktop-actions">
         ${rowActions}
       </div>
@@ -248,6 +258,13 @@ function actionMarkup(pkg) {
     </div>
     ${actionMenu}
   `;
+}
+
+function receivedSummary(pkg) {
+  const parts = [`Received ${fmtDate(pkg.pickedUpAt)}`];
+  if (pkg.receivedBy) parts.push(`by ${pkg.receivedBy}`);
+  if (pkg.receivedNote) parts.push(`- ${pkg.receivedNote}`);
+  return escapeHtml(parts.join(" "));
 }
 
 function escapeHtml(value) {
@@ -364,6 +381,21 @@ async function loadPackages() {
   const payload = await api("/api/packages");
   packages = payload.packages;
   render();
+}
+
+function openReceiveDialog(id) {
+  const pkg = packages.find((item) => item.id === id);
+  pendingReceiveId = id;
+  receiveTrackingNumber.textContent = pkg?.trackingNumber || "";
+  receivedBy.value = "";
+  receivedNote.value = "";
+  receiveDialog.showModal();
+  receivedBy.focus();
+}
+
+function closeReceiveDialogView() {
+  pendingReceiveId = null;
+  receiveDialog.close();
 }
 
 addForm.addEventListener("submit", async (event) => {
@@ -520,11 +552,16 @@ rows.addEventListener("click", async (event) => {
     saveButton.disabled = true;
     const id = saveButton.dataset.saveDescription;
     const input = rows.querySelector(`[data-description-input="${id}"]`);
+    const sellerInput = rows.querySelector(`[data-seller-input="${id}"]`);
     const carrierInput = rows.querySelector(`[data-carrier-input="${id}"]`);
     try {
       await api(`/api/packages/${id}`, {
         method: "PATCH",
-        body: JSON.stringify({ description: input?.value || "", carrier: carrierInput?.value || "auto" })
+        body: JSON.stringify({
+          description: input?.value || "",
+          seller: sellerInput?.value || "",
+          carrier: carrierInput?.value || "auto"
+        })
       });
       editingId = null;
       setMessage("Description updated.");
@@ -553,18 +590,52 @@ rows.addEventListener("click", async (event) => {
     return;
   }
 
-  const button = event.target.closest("[data-pickup], [data-unpickup]");
+  const pickupButton = event.target.closest("[data-pickup]");
+  if (pickupButton) {
+    openReceiveDialog(pickupButton.dataset.pickup);
+    return;
+  }
+
+  const button = event.target.closest("[data-unpickup]");
   if (!button) return;
   button.disabled = true;
-  const isUnpickup = Boolean(button.dataset.unpickup);
-  const id = button.dataset.pickup || button.dataset.unpickup;
+  const id = button.dataset.unpickup;
   try {
-    await api(`/api/packages/${id}/${isUnpickup ? "unpickup" : "pickup"}`, { method: "POST" });
-    setMessage(isUnpickup ? "Package marked not received." : "Package marked received.");
+    await api(`/api/packages/${id}/unpickup`, { method: "POST" });
+    setMessage("Package marked not received.");
     await loadPackages();
   } catch (error) {
     setMessage(error.message, true);
     button.disabled = false;
+  }
+});
+
+closeReceiveDialog.addEventListener("click", closeReceiveDialogView);
+cancelReceiveButton.addEventListener("click", closeReceiveDialogView);
+
+receiveDialog.addEventListener("click", (event) => {
+  if (event.target === receiveDialog) {
+    closeReceiveDialogView();
+  }
+});
+
+receiveForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!pendingReceiveId) return;
+  const id = pendingReceiveId;
+  try {
+    await api(`/api/packages/${id}/pickup`, {
+      method: "POST",
+      body: JSON.stringify({
+        receivedBy: receivedBy.value,
+        receivedNote: receivedNote.value
+      })
+    });
+    closeReceiveDialogView();
+    setMessage("Package marked received.");
+    await loadPackages();
+  } catch (error) {
+    setMessage(error.message, true);
   }
 });
 

@@ -142,6 +142,7 @@ function publicPackage(pkg) {
     id: pkg.id,
     trackingNumber: pkg.trackingNumber,
     description: pkg.description || "",
+    seller: pkg.seller || "",
     carrier: normalizeCarrier(pkg.carrier || "auto"),
     resolvedCarrier: resolvePackageCarrier(pkg),
     status: pkg.status || "pending",
@@ -152,6 +153,8 @@ function publicPackage(pkg) {
     lastCheckedAt: pkg.lastCheckedAt || null,
     arrivedAt: pkg.arrivedAt || null,
     pickedUpAt: pkg.pickedUpAt || null,
+    receivedBy: pkg.receivedBy || "",
+    receivedNote: pkg.receivedNote || "",
     notificationSentAt: pkg.notificationSentAt || null,
     createdAt: pkg.createdAt
   };
@@ -173,6 +176,7 @@ function createPackage(trackingNumber, description, carrier) {
     id: randomUUID(),
     trackingNumber,
     description,
+    seller: "",
     carrier: normalizeCarrier(carrier),
     status: "pending",
     carrierStatus: "Waiting for first check",
@@ -182,6 +186,8 @@ function createPackage(trackingNumber, description, carrier) {
     lastCheckedAt: null,
     arrivedAt: null,
     pickedUpAt: null,
+    receivedBy: "",
+    receivedNote: "",
     notificationSentAt: null,
     createdAt: now
   };
@@ -776,6 +782,9 @@ async function handleApi(req, res, pathname) {
       return;
     }
     pkg.description = String(body.description || "").trim();
+    if (body.seller !== undefined) {
+      pkg.seller = String(body.seller || "").trim();
+    }
     if (body.carrier !== undefined) {
       try {
         pkg.carrier = normalizeCarrier(body.carrier);
@@ -803,6 +812,7 @@ async function handleApi(req, res, pathname) {
 
   const pickupMatch = pathname.match(/^\/api\/packages\/([^/]+)\/pickup$/);
   if (req.method === "POST" && pickupMatch) {
+    const body = await readJson(req);
     const packages = await loadPackages();
     const pkg = packages.find((item) => item.id === pickupMatch[1]);
     if (!pkg) {
@@ -811,6 +821,8 @@ async function handleApi(req, res, pathname) {
     }
     pkg.pickedUpAt = new Date().toISOString();
     pkg.status = "picked_up";
+    pkg.receivedBy = String(body.receivedBy || "").trim();
+    pkg.receivedNote = String(body.receivedNote || "").trim();
     await savePackages(packages);
     sendJson(res, 200, { package: publicPackage(pkg) });
     return;
@@ -825,6 +837,8 @@ async function handleApi(req, res, pathname) {
       return;
     }
     pkg.pickedUpAt = null;
+    pkg.receivedBy = "";
+    pkg.receivedNote = "";
     pkg.status = pkg.arrivedAt ? "arrived" : "pending";
     await savePackages(packages);
     sendJson(res, 200, { package: publicPackage(pkg) });
