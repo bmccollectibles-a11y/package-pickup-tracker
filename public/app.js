@@ -25,6 +25,7 @@ let usingEnvEmailRecipients = false;
 let usingEnvSmsRecipients = false;
 let config = { smsEnabled: false, smsConfigured: false };
 let recipientAdminToken = window.sessionStorage.getItem("recipientAdminToken") || "";
+let recipientsLoaded = false;
 let filter = "active";
 let editingId = null;
 
@@ -328,6 +329,13 @@ function renderRecipients() {
     return;
   }
 
+  if (!recipientsLoaded) {
+    recipientSource.textContent = "Loading recipients...";
+    emailRecipientList.innerHTML = "";
+    smsRecipientList.innerHTML = "";
+    return;
+  }
+
   const fallbackText = [usingEnvEmailRecipients ? "email" : "", usingEnvSmsRecipients ? "text" : ""].filter(Boolean).join(" and ");
   recipientSource.textContent = fallbackText
     ? `Using Render ${fallbackText} recipients until you save changes here.`
@@ -343,6 +351,7 @@ async function loadNotificationSettings() {
   smsRecipients = payload.smsRecipients || [];
   usingEnvEmailRecipients = Boolean(payload.usingEnvEmailRecipients);
   usingEnvSmsRecipients = Boolean(payload.usingEnvSmsRecipients);
+  recipientsLoaded = true;
   renderRecipients();
 }
 
@@ -360,6 +369,7 @@ async function saveRecipients(nextRecipients, message) {
   smsRecipients = payload.smsRecipients || [];
   usingEnvEmailRecipients = Boolean(payload.usingEnvEmailRecipients);
   usingEnvSmsRecipients = Boolean(payload.usingEnvSmsRecipients);
+  recipientsLoaded = true;
   renderRecipients();
   setMessage(message);
 }
@@ -468,10 +478,24 @@ smsButton.addEventListener("click", async () => {
   }
 });
 
-recipientSettingsButton.addEventListener("click", () => {
+recipientSettingsButton.addEventListener("click", async () => {
   recipientDialog.showModal();
   renderRecipients();
-  (recipientAdminToken ? recipientEmail : adminPassword).focus();
+  if (recipientAdminToken) {
+    try {
+      await loadNotificationSettings();
+      recipientEmail.focus();
+    } catch (error) {
+      recipientAdminToken = "";
+      recipientsLoaded = false;
+      window.sessionStorage.removeItem("recipientAdminToken");
+      renderRecipients();
+      setMessage(error.message, true);
+      adminPassword.focus();
+    }
+  } else {
+    adminPassword.focus();
+  }
 });
 
 closeRecipientDialog.addEventListener("click", () => {
@@ -497,6 +521,7 @@ adminPasswordForm.addEventListener("submit", async (event) => {
     recipientEmail.focus();
   } catch (error) {
     recipientAdminToken = "";
+    recipientsLoaded = false;
     window.sessionStorage.removeItem("recipientAdminToken");
     renderRecipients();
     setMessage(error.message, true);
