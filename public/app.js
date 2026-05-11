@@ -79,11 +79,15 @@ function statusLabel(status) {
 
 function carrierLabel(carrier) {
   return {
-    auto: "Auto carrier",
+    auto: "Carrier",
     ups: "UPS",
     fedex: "FedEx",
     usps: "USPS"
-  }[carrier] || carrier || "Auto carrier";
+  }[carrier] || carrier || "Carrier";
+}
+
+function packageCarrierLabel(pkg) {
+  return carrierLabel(pkg.carrier === "auto" ? pkg.resolvedCarrier : pkg.carrier);
 }
 
 function etaSortValue(pkg) {
@@ -157,6 +161,7 @@ function render() {
 
   for (const pkg of visible) {
     const tr = document.createElement("tr");
+    tr.className = `package-row package-row-${pkg.status}`;
     tr.innerHTML = `
       <td data-label="Tracking">${trackingMarkup(pkg)}</td>
       <td data-label="Status"><span class="pill ${pkg.status}">${statusLabel(pkg.status)}</span></td>
@@ -194,7 +199,7 @@ function trackingMarkup(pkg) {
 
   return `
     <span class="tracking">${pkg.trackingNumber}</span>
-    <span class="note">${carrierLabel(pkg.carrier)}${pkg.carrier === "auto" && pkg.resolvedCarrier ? ` (${carrierLabel(pkg.resolvedCarrier)})` : ""}</span>
+    <span class="carrier-badge">${packageCarrierLabel(pkg)}</span>
     ${pkg.description ? `<span class="note">${escapeHtml(pkg.description)}</span>` : ""}
   `;
 }
