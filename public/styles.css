@@ -53,6 +53,25 @@ button {
   background: #ffffff;
 }
 
+.brand-block {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.brand-logo {
+  display: block;
+  width: 64px;
+  height: 64px;
+  flex: 0 0 auto;
+  border: 1px solid #202a35;
+  border-radius: 8px;
+  background: #061425;
+  box-shadow: 0 8px 22px rgba(24, 32, 27, 0.14);
+  object-fit: cover;
+}
+
 h1 {
   margin: 0;
   font-size: 30px;
@@ -595,6 +614,15 @@ tr:last-child td {
   .topbar {
     gap: 16px;
     padding: 20px 16px;
+  }
+
+  .brand-block {
+    align-items: flex-start;
+  }
+
+  .brand-logo {
+    width: 52px;
+    height: 52px;
   }
 
   h1 {
