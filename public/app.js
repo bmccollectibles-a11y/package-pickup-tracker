@@ -9,13 +9,19 @@ const recipientDialog = document.querySelector("#recipientDialog");
 const closeRecipientDialog = document.querySelector("#closeRecipientDialog");
 const adminPasswordForm = document.querySelector("#adminPasswordForm");
 const adminPassword = document.querySelector("#adminPassword");
-const recipientForm = document.querySelector("#recipientForm");
+const recipientSections = document.querySelector("#recipientSections");
+const emailRecipientForm = document.querySelector("#emailRecipientForm");
+const recipientEmail = document.querySelector("#recipientEmail");
+const emailRecipientList = document.querySelector("#emailRecipientList");
+const smsRecipientForm = document.querySelector("#smsRecipientForm");
 const recipientPhone = document.querySelector("#recipientPhone");
-const recipientList = document.querySelector("#recipientList");
+const smsRecipientList = document.querySelector("#smsRecipientList");
 const recipientSource = document.querySelector("#recipientSource");
 const tabs = [...document.querySelectorAll(".tab")];
 let packages = [];
+let emailRecipients = [];
 let smsRecipients = [];
+let usingEnvEmailRecipients = false;
 let usingEnvSmsRecipients = false;
 let config = { smsEnabled: false, smsConfigured: false };
 let recipientAdminToken = window.sessionStorage.getItem("recipientAdminToken") || "";
@@ -285,53 +291,70 @@ function normalizePhoneNumber(value) {
   return withCountryCode;
 }
 
-function renderRecipients() {
-  const unlocked = Boolean(recipientAdminToken);
-  adminPasswordForm.hidden = unlocked;
-  recipientForm.hidden = !unlocked;
-  recipientList.hidden = !unlocked;
-
-  if (!unlocked) {
-    recipientSource.textContent = "Enter the admin password to view and edit text recipients.";
-    recipientList.innerHTML = "";
-    return;
+function normalizeEmail(value) {
+  const email = String(value || "").trim().toLowerCase();
+  if (!email) return "";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error(`Enter ${email} as a valid email address.`);
   }
+  return email;
+}
 
-  recipientSource.textContent = usingEnvSmsRecipients
-    ? "Using the Render phone list until you save changes here."
-    : "Changes save to the persistent Render disk.";
-
-  if (!smsRecipients.length) {
-    recipientList.innerHTML = `<span class="note inline-note">No text recipients configured.</span>`;
-    return;
+function recipientListMarkup(recipients, removeAttribute, emptyText) {
+  if (!recipients.length) {
+    return `<span class="note inline-note">${emptyText}</span>`;
   }
-
-  recipientList.innerHTML = smsRecipients
+  return recipients
     .map(
       (recipient) => `
         <span class="recipient-chip">
           ${escapeHtml(recipient)}
-          <button type="button" aria-label="Remove ${escapeAttr(recipient)}" data-remove-recipient="${escapeAttr(recipient)}">x</button>
+          <button type="button" aria-label="Remove ${escapeAttr(recipient)}" ${removeAttribute}="${escapeAttr(recipient)}">x</button>
         </span>
       `
     )
     .join("");
 }
 
+function renderRecipients() {
+  const unlocked = Boolean(recipientAdminToken);
+  adminPasswordForm.hidden = unlocked;
+  recipientSections.hidden = !unlocked;
+
+  if (!unlocked) {
+    recipientSource.textContent = "Enter the admin password to view and edit alert recipients.";
+    emailRecipientList.innerHTML = "";
+    smsRecipientList.innerHTML = "";
+    return;
+  }
+
+  const fallbackText = [usingEnvEmailRecipients ? "email" : "", usingEnvSmsRecipients ? "text" : ""].filter(Boolean).join(" and ");
+  recipientSource.textContent = fallbackText
+    ? `Using Render ${fallbackText} recipients until you save changes here.`
+    : "Changes save to the persistent Render disk.";
+
+  emailRecipientList.innerHTML = recipientListMarkup(emailRecipients, "data-remove-email-recipient", "No email recipients configured.");
+  smsRecipientList.innerHTML = recipientListMarkup(smsRecipients, "data-remove-sms-recipient", "No text recipients configured.");
+}
+
 async function loadNotificationSettings() {
   const payload = await api("/api/notification-settings", { headers: adminHeaders() });
+  emailRecipients = payload.emailRecipients || [];
   smsRecipients = payload.smsRecipients || [];
+  usingEnvEmailRecipients = Boolean(payload.usingEnvEmailRecipients);
   usingEnvSmsRecipients = Boolean(payload.usingEnvSmsRecipients);
   renderRecipients();
 }
 
-async function saveSmsRecipients(nextRecipients, message) {
+async function saveRecipients(nextRecipients, message) {
   const payload = await api("/api/notification-settings", {
     method: "PUT",
     headers: adminHeaders(),
-    body: JSON.stringify({ smsRecipients: nextRecipients })
+    body: JSON.stringify(nextRecipients)
   });
+  emailRecipients = payload.emailRecipients || [];
   smsRecipients = payload.smsRecipients || [];
+  usingEnvEmailRecipients = false;
   usingEnvSmsRecipients = false;
   renderRecipients();
   setMessage(message);
@@ -444,7 +467,7 @@ smsButton.addEventListener("click", async () => {
 recipientSettingsButton.addEventListener("click", () => {
   recipientDialog.showModal();
   renderRecipients();
-  (recipientAdminToken ? recipientPhone : adminPassword).focus();
+  (recipientAdminToken ? recipientEmail : adminPassword).focus();
 });
 
 closeRecipientDialog.addEventListener("click", () => {
@@ -466,8 +489,8 @@ adminPasswordForm.addEventListener("submit", async (event) => {
     await loadNotificationSettings();
     window.sessionStorage.setItem("recipientAdminToken", recipientAdminToken);
     adminPassword.value = "";
-    setMessage("Text recipients unlocked.");
-    recipientPhone.focus();
+    setMessage("Recipients unlocked.");
+    recipientEmail.focus();
   } catch (error) {
     recipientAdminToken = "";
     window.sessionStorage.removeItem("recipientAdminToken");
@@ -477,7 +500,24 @@ adminPasswordForm.addEventListener("submit", async (event) => {
   }
 });
 
-recipientForm.addEventListener("submit", async (event) => {
+emailRecipientForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    const recipient = normalizeEmail(recipientEmail.value);
+    if (!recipient) return;
+    if (emailRecipients.includes(recipient)) {
+      setMessage("That email recipient is already on the list.");
+      recipientEmail.value = "";
+      return;
+    }
+    await saveRecipients({ emailRecipients: [...emailRecipients, recipient] }, "Email recipient added.");
+    recipientEmail.value = "";
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+});
+
+smsRecipientForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
     const recipient = normalizePhoneNumber(recipientPhone.value);
@@ -487,20 +527,35 @@ recipientForm.addEventListener("submit", async (event) => {
       recipientPhone.value = "";
       return;
     }
-    await saveSmsRecipients([...smsRecipients, recipient], "Text recipient added.");
+    await saveRecipients({ smsRecipients: [...smsRecipients, recipient] }, "Text recipient added.");
     recipientPhone.value = "";
   } catch (error) {
     setMessage(error.message, true);
   }
 });
 
-recipientList.addEventListener("click", async (event) => {
-  const button = event.target.closest("[data-remove-recipient]");
+emailRecipientList.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-remove-email-recipient]");
   if (!button) return;
   button.disabled = true;
   try {
-    await saveSmsRecipients(
-      smsRecipients.filter((recipient) => recipient !== button.dataset.removeRecipient),
+    await saveRecipients(
+      { emailRecipients: emailRecipients.filter((recipient) => recipient !== button.dataset.removeEmailRecipient) },
+      "Email recipient removed."
+    );
+  } catch (error) {
+    setMessage(error.message, true);
+    button.disabled = false;
+  }
+});
+
+smsRecipientList.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-remove-sms-recipient]");
+  if (!button) return;
+  button.disabled = true;
+  try {
+    await saveRecipients(
+      { smsRecipients: smsRecipients.filter((recipient) => recipient !== button.dataset.removeSmsRecipient) },
       "Text recipient removed."
     );
   } catch (error) {

@@ -44,10 +44,11 @@ async function loadNotificationSettings() {
     const raw = await readFile(notificationSettingsFile, "utf8");
     const parsed = JSON.parse(raw);
     return {
+      emailRecipients: Array.isArray(parsed.emailRecipients) ? normalizeEmailRecipients(parsed.emailRecipients) : null,
       smsRecipients: Array.isArray(parsed.smsRecipients) ? normalizePhoneNumbers(parsed.smsRecipients) : null
     };
   } catch (error) {
-    if (error.code === "ENOENT") return { smsRecipients: null };
+    if (error.code === "ENOENT") return { emailRecipients: null, smsRecipients: null };
     throw error;
   }
 }
@@ -126,6 +127,29 @@ function detectCarrier(trackingNumber) {
   if (/^(92|93|94|95|96)\d{18,32}$/.test(digitsOnly)) return "usps";
   if (/^\d{12}$|^\d{15}$|^\d{20}$|^\d{22}$/.test(digitsOnly)) return "fedex";
   return shippoCarrier;
+}
+
+function normalizeEmail(value) {
+  const email = String(value || "").trim().toLowerCase();
+  if (!email) return "";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error(`Enter ${email} as a valid email address.`);
+  }
+  return email;
+}
+
+function normalizeEmailRecipients(input) {
+  const values = Array.isArray(input) ? input : String(input || "").split(/[\s,;]+/);
+  return [...new Set(values.map(normalizeEmail).filter(Boolean))];
+}
+
+function envEmailRecipients() {
+  return normalizeEmailRecipients(process.env.NOTIFY_EMAIL_TO || "");
+}
+
+async function emailRecipients() {
+  const settings = await loadNotificationSettings();
+  return settings.emailRecipients === null ? envEmailRecipients() : settings.emailRecipients;
 }
 
 function envSmsRecipients() {
@@ -509,9 +533,9 @@ function buildPickupEmailHtml(packages) {
 
 async function sendResendEmail(packages) {
   const apiKey = process.env.RESEND_API_KEY;
-  const to = process.env.NOTIFY_EMAIL_TO;
   const from = process.env.NOTIFY_EMAIL_FROM;
-  if (!apiKey || !to || !from) return { skipped: "email not configured" };
+  const recipients = await emailRecipients();
+  if (!apiKey || !from || !recipients.length) return { skipped: "email not configured" };
 
   const { ready, outForDelivery } = attentionSummary(packages);
   const lines = packages.map((pkg) => {
@@ -526,7 +550,7 @@ async function sendResendEmail(packages) {
     },
     body: JSON.stringify({
       from,
-      to: to.split(",").map((item) => item.trim()).filter(Boolean),
+      to: recipients,
       subject: `${ready} ready, ${outForDelivery} out for delivery`,
       text: `Package pickup status:\n\n${lines.join("\n")}\n\nAfter pickup, mark each package as received in the tracker.`,
       html: buildPickupEmailHtml(packages)
@@ -674,12 +698,14 @@ async function handleApi(req, res, pathname) {
   }
 
   if (req.method === "GET" && pathname === "/api/config") {
+    const configuredEmailRecipients = await emailRecipients();
     const configuredSmsRecipients = await smsRecipients();
     sendJson(res, 200, {
       trackerMode: "shippo",
       shippoCarrier,
       shippoConfigured: Boolean(process.env.SHIPPO_API_TOKEN),
       adminConfigured: Boolean(adminPassword),
+      emailConfigured: Boolean(process.env.RESEND_API_KEY && process.env.NOTIFY_EMAIL_FROM && configuredEmailRecipients.length),
       smsEnabled,
       smsConfigured: Boolean(
         smsEnabled &&
@@ -696,10 +722,13 @@ async function handleApi(req, res, pathname) {
   if (req.method === "GET" && pathname === "/api/notification-settings") {
     if (!authorizeAdmin(req, res)) return;
     const settings = await loadNotificationSettings();
-    const recipients = settings.smsRecipients === null ? envSmsRecipients() : settings.smsRecipients;
+    const emailList = settings.emailRecipients === null ? envEmailRecipients() : settings.emailRecipients;
+    const smsList = settings.smsRecipients === null ? envSmsRecipients() : settings.smsRecipients;
     sendJson(res, 200, {
-      smsRecipients: recipients,
-      usingEnvSmsRecipients: settings.smsRecipients === null && recipients.length > 0,
+      emailRecipients: emailList,
+      smsRecipients: smsList,
+      usingEnvEmailRecipients: settings.emailRecipients === null && emailList.length > 0,
+      usingEnvSmsRecipients: settings.smsRecipients === null && smsList.length > 0,
       smsEnabled,
       twilioConfigured: Boolean(smsEnabled && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM)
     });
@@ -709,15 +738,23 @@ async function handleApi(req, res, pathname) {
   if (req.method === "PUT" && pathname === "/api/notification-settings") {
     if (!authorizeAdmin(req, res)) return;
     const body = await readJson(req);
+    const existing = await loadNotificationSettings();
+    let emailRecipients = existing.emailRecipients;
     let smsRecipients;
     try {
-      smsRecipients = normalizePhoneNumbers(body.smsRecipients || []);
+      if (body.emailRecipients !== undefined) {
+        emailRecipients = normalizeEmailRecipients(body.emailRecipients || []);
+      }
+      smsRecipients = body.smsRecipients === undefined ? existing.smsRecipients : normalizePhoneNumbers(body.smsRecipients || []);
     } catch (error) {
       sendJson(res, 400, { error: error.message });
       return;
     }
-    await saveNotificationSettings({ smsRecipients });
-    sendJson(res, 200, { smsRecipients });
+    await saveNotificationSettings({ emailRecipients, smsRecipients });
+    sendJson(res, 200, {
+      emailRecipients: emailRecipients || [],
+      smsRecipients: smsRecipients || []
+    });
     return;
   }
 

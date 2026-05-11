@@ -57,6 +57,8 @@ ADMIN_PASSWORD=choose_a_private_admin_password
 
 Keep `SMS_ENABLED=false` while Twilio A2P approval is pending so the app does not attempt billable SMS sends. Set it to `true` after the campaign is approved. `TWILIO_FROM` must be a Twilio phone number or approved sender. `TWILIO_TO` is optional after the first deploy: the dashboard has a password-protected Text recipients dialog where phone numbers can be added or removed without changing Render environment variables. If no dashboard list has been saved yet, the app falls back to `TWILIO_TO`.
 
+Email recipients can also be added or removed from the password-protected Recipients dialog. If no dashboard email list has been saved yet, the app falls back to `NOTIFY_EMAIL_TO`.
+
 The dashboard has separate manual actions for status refresh, email alerts, and text alerts. `POST /api/refresh` only updates tracking statuses. `POST /api/notify/email` sends email only. `POST /api/notify/sms` sends text only, and skips Twilio unless `SMS_ENABLED=true`.
 
 ## Deploy on Render
