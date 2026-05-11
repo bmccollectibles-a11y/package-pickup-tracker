@@ -347,15 +347,19 @@ async function loadNotificationSettings() {
 }
 
 async function saveRecipients(nextRecipients, message) {
+  const body = {
+    emailRecipients: nextRecipients.emailRecipients ?? emailRecipients,
+    smsRecipients: nextRecipients.smsRecipients ?? smsRecipients
+  };
   const payload = await api("/api/notification-settings", {
     method: "PUT",
     headers: adminHeaders(),
-    body: JSON.stringify(nextRecipients)
+    body: JSON.stringify(body)
   });
   emailRecipients = payload.emailRecipients || [];
   smsRecipients = payload.smsRecipients || [];
-  usingEnvEmailRecipients = false;
-  usingEnvSmsRecipients = false;
+  usingEnvEmailRecipients = Boolean(payload.usingEnvEmailRecipients);
+  usingEnvSmsRecipients = Boolean(payload.usingEnvSmsRecipients);
   renderRecipients();
   setMessage(message);
 }

@@ -161,6 +161,19 @@ async function smsRecipients() {
   return settings.smsRecipients === null ? envSmsRecipients() : settings.smsRecipients;
 }
 
+function publicNotificationSettings(settings) {
+  const emailList = settings.emailRecipients === null ? envEmailRecipients() : settings.emailRecipients;
+  const smsList = settings.smsRecipients === null ? envSmsRecipients() : settings.smsRecipients;
+  return {
+    emailRecipients: emailList,
+    smsRecipients: smsList,
+    usingEnvEmailRecipients: settings.emailRecipients === null && emailList.length > 0,
+    usingEnvSmsRecipients: settings.smsRecipients === null && smsList.length > 0,
+    smsEnabled,
+    twilioConfigured: Boolean(smsEnabled && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM)
+  };
+}
+
 function publicPackage(pkg) {
   return {
     id: pkg.id,
@@ -722,16 +735,7 @@ async function handleApi(req, res, pathname) {
   if (req.method === "GET" && pathname === "/api/notification-settings") {
     if (!authorizeAdmin(req, res)) return;
     const settings = await loadNotificationSettings();
-    const emailList = settings.emailRecipients === null ? envEmailRecipients() : settings.emailRecipients;
-    const smsList = settings.smsRecipients === null ? envSmsRecipients() : settings.smsRecipients;
-    sendJson(res, 200, {
-      emailRecipients: emailList,
-      smsRecipients: smsList,
-      usingEnvEmailRecipients: settings.emailRecipients === null && emailList.length > 0,
-      usingEnvSmsRecipients: settings.smsRecipients === null && smsList.length > 0,
-      smsEnabled,
-      twilioConfigured: Boolean(smsEnabled && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM)
-    });
+    sendJson(res, 200, publicNotificationSettings(settings));
     return;
   }
 
@@ -750,11 +754,9 @@ async function handleApi(req, res, pathname) {
       sendJson(res, 400, { error: error.message });
       return;
     }
-    await saveNotificationSettings({ emailRecipients, smsRecipients });
-    sendJson(res, 200, {
-      emailRecipients: emailRecipients || [],
-      smsRecipients: smsRecipients || []
-    });
+    const nextSettings = { emailRecipients, smsRecipients };
+    await saveNotificationSettings(nextSettings);
+    sendJson(res, 200, publicNotificationSettings(nextSettings));
     return;
   }
 
