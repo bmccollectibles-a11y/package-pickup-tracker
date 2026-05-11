@@ -785,12 +785,16 @@ async function inboundEmailText(body) {
 async function processInboundPackageEmail(body) {
   const now = new Date().toISOString();
   const text = await inboundEmailText(body);
-  const trackingNumbers = trackingNumbersFromText(text);
+  const packages = await loadPackages();
+  const compactText = text.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const embeddedTrackingNumbers = packages
+    .map((pkg) => pkg.trackingNumber.toUpperCase())
+    .filter((trackingNumber) => compactText.includes(trackingNumber));
+  const trackingNumbers = [...new Set([...trackingNumbersFromText(text), ...embeddedTrackingNumbers])];
   if (!trackingNumbers.length) {
     return { matched: [], unknownTrackingNumbers: [], extractedTrackingNumbers: [] };
   }
 
-  const packages = await loadPackages();
   const byTrackingNumber = new Map(packages.map((pkg) => [pkg.trackingNumber.toUpperCase(), pkg]));
   const matched = [];
   const unknownTrackingNumbers = [];
