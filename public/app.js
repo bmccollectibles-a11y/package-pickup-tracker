@@ -206,24 +206,38 @@ function carrierOptionMarkup(selectedCarrier) {
 }
 
 function actionMarkup(pkg) {
-  const commonActions = `
-    <div class="row-actions">
-      <button class="secondary compact" data-edit-description="${pkg.id}">Edit</button>
-      <button class="danger compact" data-delete-package="${pkg.id}">Delete</button>
-    </div>
+  const primaryAction = pkg.pickedUpAt
+    ? `<button class="secondary" data-unpickup="${pkg.id}">Mark not received</button>`
+    : `<button class="secondary" data-pickup="${pkg.id}">Mark received</button>`;
+  const rowActions = `
+    ${primaryAction}
+    <button class="secondary compact" data-edit-description="${pkg.id}">Edit</button>
+    <button class="danger compact" data-delete-package="${pkg.id}">Delete</button>
+  `;
+  const actionMenu = `
+    <details class="action-menu">
+      <summary>Actions</summary>
+      <div class="action-menu-items">
+        ${rowActions}
+      </div>
+    </details>
   `;
 
   if (pkg.pickedUpAt) {
     return `
       <span class="note action-note">Received ${fmtDate(pkg.pickedUpAt)}</span>
-      <button class="secondary" data-unpickup="${pkg.id}">Mark not received</button>
-      ${commonActions}
+      <div class="row-actions desktop-actions">
+        ${rowActions}
+      </div>
+      ${actionMenu}
     `;
   }
 
   return `
-    <button class="secondary" data-pickup="${pkg.id}">Mark received</button>
-    ${commonActions}
+    <div class="row-actions desktop-actions">
+      ${rowActions}
+    </div>
+    ${actionMenu}
   `;
 }
 

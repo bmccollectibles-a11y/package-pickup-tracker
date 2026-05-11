@@ -435,6 +435,34 @@ tr:last-child td {
   margin-top: 8px;
 }
 
+.action-menu {
+  display: none;
+}
+
+.action-menu summary {
+  display: block;
+  width: 100%;
+  border: 1px solid #cdd5c9;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+  padding: 10px 12px;
+  text-align: center;
+  font-weight: 800;
+  list-style: none;
+}
+
+.action-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.action-menu-items {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .edit-row {
   margin-top: 8px;
 }
@@ -617,7 +645,21 @@ tr:last-child td {
     flex-direction: column;
   }
 
+  .desktop-actions {
+    display: none;
+  }
+
+  .action-menu {
+    display: block;
+  }
+
+  .action-menu[open] summary {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+  }
+
   .row-actions button,
+  .action-menu-items button,
   .edit-row button,
   td > button {
     width: 100%;
