@@ -61,6 +61,24 @@ Email recipients can also be added or removed from the password-protected Recipi
 
 The dashboard has separate manual actions for status refresh, email alerts, and text alerts. `POST /api/refresh` only updates tracking statuses. `POST /api/notify/email` sends email only. `POST /api/notify/sms` sends text only, and skips Twilio unless `SMS_ENABLED=true`.
 
+## Inbound UPS Store Emails
+
+The app can accept inbound package-ready emails from Resend and mark matching tracking numbers as ready. This is useful for UPS Store pickup emails that arrive before Shippo updates.
+
+Set a private webhook token:
+
+```bash
+INBOUND_EMAIL_SECRET=choose_a_private_webhook_token
+```
+
+Configure Resend Receiving to send `email.received` webhooks to:
+
+```bash
+https://bmcpackages.com/api/inbound/ups-store?token=your_private_webhook_token
+```
+
+When Resend receives a webhook, the app fetches the email body from Resend, extracts UPS, USPS, and FedEx-style tracking numbers, and marks any matching active packages as ready. Unknown tracking numbers are returned in the webhook response but are not added automatically.
+
 ## Deploy on Render
 
 This app can run as one Render Web Service using Docker.
@@ -82,6 +100,7 @@ CHECK_INTERVAL_HOURS=0
 RESEND_API_KEY=your_resend_key
 NOTIFY_EMAIL_FROM=Package Tracker <packages@bmcpackages.com>
 NOTIFY_EMAIL_TO=bmcbreaks@gmail.com
+INBOUND_EMAIL_SECRET=choose_a_private_webhook_token
 TWILIO_ACCOUNT_SID=your_twilio_account_sid
 TWILIO_AUTH_TOKEN=your_twilio_auth_token
 SMS_ENABLED=false

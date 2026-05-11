@@ -15,6 +15,7 @@ const shippoCarrier = (process.env.SHIPPO_CARRIER || "ups").toLowerCase();
 const shippoTimeoutMs = Number(process.env.SHIPPO_TIMEOUT_MS || 20000);
 const adminPassword = process.env.ADMIN_PASSWORD || "";
 const smsEnabled = process.env.SMS_ENABLED === "true";
+const inboundEmailSecret = process.env.INBOUND_EMAIL_SECRET || "";
 
 const contentTypes = {
   ".html": "text/html; charset=utf-8",
@@ -77,6 +78,27 @@ function readBearerToken(req) {
   return header.startsWith("Bearer ") ? header.slice(7) : "";
 }
 
+function readUrlToken(req) {
+  try {
+    return new URL(req.url, "http://localhost").searchParams.get("token") || "";
+  } catch {
+    return "";
+  }
+}
+
+function authorizeInboundEmail(req, res) {
+  if (!inboundEmailSecret) {
+    sendJson(res, 503, { error: "Inbound email secret is not configured." });
+    return false;
+  }
+  const token = readBearerToken(req) || readUrlToken(req);
+  if (token !== inboundEmailSecret) {
+    sendJson(res, 401, { error: "Inbound email token is invalid." });
+    return false;
+  }
+  return true;
+}
+
 function authorizeAdmin(req, res) {
   if (!adminPassword) {
     sendJson(res, 503, { error: "Admin password is not configured." });
@@ -94,6 +116,12 @@ function normalizeTrackingNumbers(input) {
     .split(/[\s,;]+/)
     .map((value) => value.trim().toUpperCase())
     .filter(Boolean);
+}
+
+function trackingNumbersFromText(input) {
+  const text = String(input || "").toUpperCase();
+  const matches = text.match(/\b(?:1Z[A-Z0-9]{10,22}|(?:92|93|94|95|96)\d{18,32}|\d{12,22})\b/g) || [];
+  return [...new Set(matches)];
 }
 
 function normalizePhoneNumber(value) {
@@ -205,6 +233,16 @@ function cleanCarrierStatus(status, carrierStatus) {
   if (status === "out_for_delivery") return "Out for Delivery";
   if (status === "in_transit") return value || "In Transit";
   return value;
+}
+
+function markPackageArrived(pkg, now = new Date().toISOString()) {
+  pkg.status = "arrived";
+  pkg.carrierStatus = "Delivered";
+  pkg.eta = null;
+  pkg.originalEta = null;
+  pkg.trackingSubstatus = "delivered";
+  pkg.arrivedAt = pkg.arrivedAt || now;
+  pkg.lastCheckedAt = now;
 }
 
 function createPackage(trackingNumber, description, carrier) {
@@ -638,11 +676,15 @@ async function refreshPackages() {
       const result = await checkTrackingNumber(pkg);
       const wasNewArrival = result.status === "arrived" && !pkg.arrivedAt;
       const wasNewOutForDelivery = result.status === "out_for_delivery" && previousStatus !== "out_for_delivery";
+      if (pkg.arrivedAt && result.status !== "arrived") {
+        markPackageArrived(pkg, now);
+        continue;
+      }
       updatePackageTrackingFields(pkg, result);
       pkg.lastCheckedAt = now;
 
       if (result.status === "arrived" && !pkg.arrivedAt) {
-        pkg.arrivedAt = now;
+        markPackageArrived(pkg, now);
       }
 
       if (wasNewArrival) {
@@ -652,6 +694,10 @@ async function refreshPackages() {
         newlyOutForDelivery.push(pkg);
       }
     } catch (error) {
+      if (pkg.arrivedAt) {
+        markPackageArrived(pkg, now);
+        continue;
+      }
       pkg.status = "check_failed";
       pkg.carrierStatus = error.message;
       pkg.eta = null;
@@ -689,6 +735,86 @@ async function notifyReadyForPickup(senders = [sendResendEmail, sendTwilioSms]) 
     notifiedReadyForPickup: readyForPickup.map(publicPackage),
     notifications: notificationResults,
     packages: packages.map(publicPackage)
+  };
+}
+
+function stripHtml(value) {
+  return String(value || "")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/gi, '"');
+}
+
+async function fetchReceivedEmail(emailId) {
+  if (!process.env.RESEND_API_KEY) {
+    throw new Error("RESEND_API_KEY is required to fetch inbound email content.");
+  }
+  const response = await fetch(`https://api.resend.com/emails/receiving/${encodeURIComponent(emailId)}`, {
+    headers: {
+      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+      Accept: "application/json"
+    }
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(`Resend inbound email fetch failed: ${response.status} ${JSON.stringify(payload)}`);
+  }
+  return payload.data || payload;
+}
+
+async function inboundEmailText(body) {
+  const emailId = body?.data?.email_id || body?.email_id;
+  const email = emailId ? await fetchReceivedEmail(emailId) : body;
+  return [
+    email?.subject,
+    email?.text,
+    stripHtml(email?.html),
+    body?.text,
+    stripHtml(body?.html)
+  ].filter(Boolean).join("\n");
+}
+
+async function processInboundPackageEmail(body) {
+  const now = new Date().toISOString();
+  const text = await inboundEmailText(body);
+  const trackingNumbers = trackingNumbersFromText(text);
+  if (!trackingNumbers.length) {
+    return { matched: [], unknownTrackingNumbers: [], extractedTrackingNumbers: [] };
+  }
+
+  const packages = await loadPackages();
+  const byTrackingNumber = new Map(packages.map((pkg) => [pkg.trackingNumber.toUpperCase(), pkg]));
+  const matched = [];
+  const unknownTrackingNumbers = [];
+
+  for (const trackingNumber of trackingNumbers) {
+    const pkg = byTrackingNumber.get(trackingNumber);
+    if (!pkg) {
+      unknownTrackingNumbers.push(trackingNumber);
+      continue;
+    }
+    if (!pkg.pickedUpAt) {
+      markPackageArrived(pkg, now);
+    }
+    matched.push(pkg);
+  }
+
+  if (matched.length) {
+    await savePackages(packages);
+  }
+
+  return {
+    matched: matched.map(publicPackage),
+    unknownTrackingNumbers,
+    extractedTrackingNumbers: trackingNumbers
   };
 }
 
@@ -808,6 +934,17 @@ async function handleApi(req, res, pathname) {
 
   if (req.method === "POST" && pathname === "/api/automation") {
     sendJson(res, 200, await runAutomation());
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/inbound/ups-store") {
+    if (!authorizeInboundEmail(req, res)) return;
+    const body = await readJson(req);
+    if (body.type && body.type !== "email.received") {
+      sendJson(res, 200, { ignored: true, reason: `Unsupported event type ${body.type}.` });
+      return;
+    }
+    sendJson(res, 200, await processInboundPackageEmail(body));
     return;
   }
 
