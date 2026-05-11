@@ -174,30 +174,6 @@ main {
   gap: 10px;
 }
 
-.receive-form {
-  display: grid;
-  gap: 10px;
-}
-
-.optional-details {
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: #fbfcfa;
-}
-
-.optional-details summary {
-  cursor: pointer;
-  padding: 10px 12px;
-  color: #4b5549;
-  font-weight: 800;
-}
-
-.optional-detail-fields {
-  display: grid;
-  gap: 10px;
-  padding: 0 12px 12px;
-}
-
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
@@ -573,6 +549,8 @@ tr:last-child td {
 
 .description-input,
 .seller-input,
+.received-by-input,
+.received-note-input,
 .carrier-input {
   min-width: 220px;
   max-width: 360px;
@@ -833,6 +811,12 @@ tr:last-child td {
   }
 
   .seller-input {
+    min-width: 0;
+    max-width: none;
+  }
+
+  .received-by-input,
+  .received-note-input {
     min-width: 0;
     max-width: none;
   }

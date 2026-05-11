@@ -785,6 +785,14 @@ async function handleApi(req, res, pathname) {
     if (body.seller !== undefined) {
       pkg.seller = String(body.seller || "").trim();
     }
+    if (pkg.pickedUpAt) {
+      if (body.receivedBy !== undefined) {
+        pkg.receivedBy = String(body.receivedBy || "").trim();
+      }
+      if (body.receivedNote !== undefined) {
+        pkg.receivedNote = String(body.receivedNote || "").trim();
+      }
+    }
     if (body.carrier !== undefined) {
       try {
         pkg.carrier = normalizeCarrier(body.carrier);

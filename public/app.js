@@ -13,13 +13,6 @@ const recipientForm = document.querySelector("#recipientForm");
 const recipientPhone = document.querySelector("#recipientPhone");
 const recipientList = document.querySelector("#recipientList");
 const recipientSource = document.querySelector("#recipientSource");
-const receiveDialog = document.querySelector("#receiveDialog");
-const closeReceiveDialog = document.querySelector("#closeReceiveDialog");
-const cancelReceiveButton = document.querySelector("#cancelReceiveButton");
-const receiveForm = document.querySelector("#receiveForm");
-const receiveTrackingNumber = document.querySelector("#receiveTrackingNumber");
-const receivedBy = document.querySelector("#receivedBy");
-const receivedNote = document.querySelector("#receivedNote");
 const tabs = [...document.querySelectorAll(".tab")];
 let packages = [];
 let smsRecipients = [];
@@ -28,7 +21,6 @@ let config = { smsEnabled: false, smsConfigured: false };
 let recipientAdminToken = window.sessionStorage.getItem("recipientAdminToken") || "";
 let filter = "active";
 let editingId = null;
-let pendingReceiveId = null;
 
 function setMessage(message, isError = false) {
   statusMessage.textContent = message;
@@ -199,6 +191,10 @@ function trackingMarkup(pkg) {
       <div class="edit-row">
         <input class="description-input" data-description-input="${pkg.id}" value="${escapeAttr(pkg.description || "")}" placeholder="Description">
         <input class="seller-input" data-seller-input="${pkg.id}" value="${escapeAttr(pkg.seller || "")}" placeholder="Seller (optional)">
+        ${pkg.pickedUpAt ? `
+          <input class="received-by-input" data-received-by-input="${pkg.id}" value="${escapeAttr(pkg.receivedBy || "")}" placeholder="Received by (optional)">
+          <input class="received-note-input" data-received-note-input="${pkg.id}" value="${escapeAttr(pkg.receivedNote || "")}" placeholder="Received note (optional)">
+        ` : ""}
         <button class="secondary compact" data-save-description="${pkg.id}">Save</button>
         <button class="secondary compact" data-cancel-edit="${pkg.id}">Cancel</button>
       </div>
@@ -380,21 +376,6 @@ async function loadPackages() {
   render();
 }
 
-function openReceiveDialog(id) {
-  const pkg = packages.find((item) => item.id === id);
-  pendingReceiveId = id;
-  receiveTrackingNumber.textContent = pkg?.trackingNumber || "";
-  receivedBy.value = "";
-  receivedNote.value = "";
-  receiveDialog.showModal();
-  receivedBy.focus();
-}
-
-function closeReceiveDialogView() {
-  pendingReceiveId = null;
-  receiveDialog.close();
-}
-
 addForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = new FormData(addForm);
@@ -550,12 +531,16 @@ rows.addEventListener("click", async (event) => {
     const id = saveButton.dataset.saveDescription;
     const input = rows.querySelector(`[data-description-input="${id}"]`);
     const sellerInput = rows.querySelector(`[data-seller-input="${id}"]`);
+    const receivedByInput = rows.querySelector(`[data-received-by-input="${id}"]`);
+    const receivedNoteInput = rows.querySelector(`[data-received-note-input="${id}"]`);
     try {
       await api(`/api/packages/${id}`, {
         method: "PATCH",
         body: JSON.stringify({
           description: input?.value || "",
-          seller: sellerInput?.value || ""
+          seller: sellerInput?.value || "",
+          receivedBy: receivedByInput?.value || "",
+          receivedNote: receivedNoteInput?.value || ""
         })
       });
       editingId = null;
@@ -587,7 +572,15 @@ rows.addEventListener("click", async (event) => {
 
   const pickupButton = event.target.closest("[data-pickup]");
   if (pickupButton) {
-    openReceiveDialog(pickupButton.dataset.pickup);
+    pickupButton.disabled = true;
+    try {
+      await api(`/api/packages/${pickupButton.dataset.pickup}/pickup`, { method: "POST" });
+      setMessage("Package marked received.");
+      await loadPackages();
+    } catch (error) {
+      setMessage(error.message, true);
+      pickupButton.disabled = false;
+    }
     return;
   }
 
@@ -602,35 +595,6 @@ rows.addEventListener("click", async (event) => {
   } catch (error) {
     setMessage(error.message, true);
     button.disabled = false;
-  }
-});
-
-closeReceiveDialog.addEventListener("click", closeReceiveDialogView);
-cancelReceiveButton.addEventListener("click", closeReceiveDialogView);
-
-receiveDialog.addEventListener("click", (event) => {
-  if (event.target === receiveDialog) {
-    closeReceiveDialogView();
-  }
-});
-
-receiveForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  if (!pendingReceiveId) return;
-  const id = pendingReceiveId;
-  try {
-    await api(`/api/packages/${id}/pickup`, {
-      method: "POST",
-      body: JSON.stringify({
-        receivedBy: receivedBy.value,
-        receivedNote: receivedNote.value
-      })
-    });
-    closeReceiveDialogView();
-    setMessage("Package marked received.");
-    await loadPackages();
-  } catch (error) {
-    setMessage(error.message, true);
   }
 });
 
