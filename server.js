@@ -14,6 +14,7 @@ const checkIntervalHours = Number(process.env.CHECK_INTERVAL_HOURS || 24);
 const shippoCarrier = (process.env.SHIPPO_CARRIER || "ups").toLowerCase();
 const shippoTimeoutMs = Number(process.env.SHIPPO_TIMEOUT_MS || 20000);
 const adminPassword = process.env.ADMIN_PASSWORD || "";
+const smsEnabled = process.env.SMS_ENABLED === "true";
 
 const contentTypes = {
   ".html": "text/html; charset=utf-8",
@@ -435,6 +436,8 @@ async function sendResendEmail(packages) {
 }
 
 async function sendTwilioSms(packages) {
+  if (!smsEnabled) return { skipped: "sms disabled" };
+
   const sid = process.env.TWILIO_ACCOUNT_SID;
   const token = process.env.TWILIO_AUTH_TOKEN;
   const from = process.env.TWILIO_FROM;
@@ -572,7 +575,9 @@ async function handleApi(req, res, pathname) {
       shippoCarrier,
       shippoConfigured: Boolean(process.env.SHIPPO_API_TOKEN),
       adminConfigured: Boolean(adminPassword),
+      smsEnabled,
       smsConfigured: Boolean(
+        smsEnabled &&
         process.env.TWILIO_ACCOUNT_SID &&
           process.env.TWILIO_AUTH_TOKEN &&
           process.env.TWILIO_FROM &&
@@ -590,7 +595,8 @@ async function handleApi(req, res, pathname) {
     sendJson(res, 200, {
       smsRecipients: recipients,
       usingEnvSmsRecipients: settings.smsRecipients === null && recipients.length > 0,
-      twilioConfigured: Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM)
+      smsEnabled,
+      twilioConfigured: Boolean(smsEnabled && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM)
     });
     return;
   }
