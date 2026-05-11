@@ -57,6 +57,8 @@ ADMIN_PASSWORD=choose_a_private_admin_password
 
 Keep `SMS_ENABLED=false` while Twilio A2P approval is pending so the app does not attempt billable SMS sends. Set it to `true` after the campaign is approved. `TWILIO_FROM` must be a Twilio phone number or approved sender. `TWILIO_TO` is optional after the first deploy: the dashboard has a password-protected Text recipients dialog where phone numbers can be added or removed without changing Render environment variables. If no dashboard list has been saved yet, the app falls back to `TWILIO_TO`.
 
+The dashboard has separate manual actions for status refresh, email alerts, and text alerts. `POST /api/refresh` only updates tracking statuses. `POST /api/notify/email` sends email only. `POST /api/notify/sms` sends text only, and skips Twilio unless `SMS_ENABLED=true`.
+
 ## Deploy on Render
 
 This app can run as one Render Web Service using Docker.
@@ -92,7 +94,7 @@ ADMIN_PASSWORD=choose_a_private_admin_password
 7. Add a Render Cron Job that runs daily at your chosen time and calls:
 
 ```bash
-curl -X POST https://your-render-app.onrender.com/api/refresh
+curl -X POST https://your-render-app.onrender.com/api/automation
 ```
 
-The dashboard remains available at the Render web service URL, and the cron job uses the same refresh/email logic as the manual button.
+The dashboard remains available at the Render web service URL. The cron endpoint refreshes tracking first, then sends enabled notifications. With `SMS_ENABLED=false`, it refreshes and sends email only.

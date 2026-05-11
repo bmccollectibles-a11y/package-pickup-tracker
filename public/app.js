@@ -1,7 +1,8 @@
 const rows = document.querySelector("#packageRows");
 const addForm = document.querySelector("#addForm");
 const refreshButton = document.querySelector("#refreshButton");
-const notifyButton = document.querySelector("#notifyButton");
+const emailButton = document.querySelector("#emailButton");
+const smsButton = document.querySelector("#smsButton");
 const statusMessage = document.querySelector("#statusMessage");
 const recipientSettingsButton = document.querySelector("#recipientSettingsButton");
 const recipientDialog = document.querySelector("#recipientDialog");
@@ -16,6 +17,7 @@ const tabs = [...document.querySelectorAll(".tab")];
 let packages = [];
 let smsRecipients = [];
 let usingEnvSmsRecipients = false;
+let config = { smsEnabled: false, smsConfigured: false };
 let recipientAdminToken = window.sessionStorage.getItem("recipientAdminToken") || "";
 let filter = "active";
 let editingId = null;
@@ -342,6 +344,22 @@ function notificationMessage(payload) {
   return `${summary}, but notifications are not configured.`;
 }
 
+function refreshMessage(payload) {
+  const errorText = payload.errors?.length ? ` ${payload.errors.length} check failed.` : "";
+  const outForDeliveryText = payload.newlyOutForDelivery?.length ? ` ${payload.newlyOutForDelivery.length} newly out for delivery.` : "";
+  return `Refresh complete. ${payload.newlyArrived?.length || 0} newly ready.${outForDeliveryText}${errorText}`;
+}
+
+function updateSmsButton() {
+  smsButton.disabled = !config.smsEnabled;
+  smsButton.title = config.smsEnabled ? "" : "Text alerts are disabled until SMS_ENABLED=true.";
+}
+
+async function loadConfig() {
+  config = await api("/api/config");
+  updateSmsButton();
+}
+
 async function loadPackages() {
   const payload = await api("/api/packages");
   packages = payload.packages;
@@ -374,13 +392,7 @@ refreshButton.addEventListener("click", async () => {
   try {
     const payload = await api("/api/refresh", { method: "POST", timeoutMs: 75000 });
     packages = payload.packages;
-    const errorText = payload.errors.length ? ` ${payload.errors.length} check failed.` : "";
-    const emailMessage = notificationMessage(payload);
-    const outForDeliveryText = payload.newlyOutForDelivery?.length ? ` ${payload.newlyOutForDelivery.length} newly out for delivery.` : "";
-    setMessage(
-      `Refresh complete. ${payload.newlyArrived.length} newly ready.${outForDeliveryText} ${emailMessage}${errorText}`,
-      Boolean(payload.errors.length || payload.notifications?.some((item) => item.error))
-    );
+    setMessage(refreshMessage(payload), Boolean(payload.errors?.length));
     render();
   } catch (error) {
     setMessage(error.message, true);
@@ -389,19 +401,33 @@ refreshButton.addEventListener("click", async () => {
   }
 });
 
-notifyButton.addEventListener("click", async () => {
-  notifyButton.disabled = true;
-  setMessage("Sending pickup alert...");
+emailButton.addEventListener("click", async () => {
+  emailButton.disabled = true;
+  setMessage("Sending email alert...");
   try {
-    const payload = await api("/api/notify", { method: "POST" });
+    const payload = await api("/api/notify/email", { method: "POST" });
     packages = payload.packages;
-    const emailMessage = notificationMessage(payload);
-    setMessage(emailMessage, payload.notifications?.some((item) => item.error));
+    setMessage(notificationMessage(payload), payload.notifications?.some((item) => item.error));
     render();
   } catch (error) {
     setMessage(error.message, true);
   } finally {
-    notifyButton.disabled = false;
+    emailButton.disabled = false;
+  }
+});
+
+smsButton.addEventListener("click", async () => {
+  smsButton.disabled = true;
+  setMessage("Sending text alert...");
+  try {
+    const payload = await api("/api/notify/sms", { method: "POST" });
+    packages = payload.packages;
+    setMessage(notificationMessage(payload), payload.notifications?.some((item) => item.error));
+    render();
+  } catch (error) {
+    setMessage(error.message, true);
+  } finally {
+    updateSmsButton();
   }
 });
 
@@ -551,4 +577,4 @@ for (const tab of tabs) {
 }
 
 renderRecipients();
-loadPackages().catch((error) => setMessage(error.message, true));
+Promise.all([loadConfig(), loadPackages()]).catch((error) => setMessage(error.message, true));

@@ -567,10 +567,10 @@ async function sendTwilioSms(packages) {
   return { sent: "sms", recipients: results.length };
 }
 
-async function notifyArrivals(packages) {
+async function notifyArrivals(packages, senders = [sendResendEmail, sendTwilioSms]) {
   if (!packages.length) return [];
   const results = [];
-  for (const sender of [sendResendEmail, sendTwilioSms]) {
+  for (const sender of senders) {
     try {
       results.push(await sender(packages));
     } catch (error) {
@@ -619,31 +619,21 @@ async function refreshPackages() {
     }
   }
 
-  const readyForPickup = packagesForPickupEmail(packages);
-  const notificationResults = await notifyArrivals(readyForPickup);
-  if (notificationResults.some((result) => result.sent)) {
-    for (const pkg of readyForPickup) {
-      pkg.notificationSentAt = now;
-    }
-  }
-
   await savePackages(packages);
   return {
     checkedAt: now,
     newlyArrived: newlyArrived.map(publicPackage),
     newlyOutForDelivery: newlyOutForDelivery.map(publicPackage),
-    notifiedReadyForPickup: readyForPickup.map(publicPackage),
     errors,
-    notifications: notificationResults,
     packages: packages.map(publicPackage)
   };
 }
 
-async function notifyReadyForPickup() {
+async function notifyReadyForPickup(senders = [sendResendEmail, sendTwilioSms]) {
   const packages = await loadPackages();
   const now = new Date().toISOString();
   const readyForPickup = packagesForPickupEmail(packages);
-  const notificationResults = await notifyArrivals(readyForPickup);
+  const notificationResults = await notifyArrivals(readyForPickup, senders);
 
   if (notificationResults.some((result) => result.sent)) {
     for (const pkg of readyForPickup) {
@@ -656,6 +646,17 @@ async function notifyReadyForPickup() {
     notifiedReadyForPickup: readyForPickup.map(publicPackage),
     notifications: notificationResults,
     packages: packages.map(publicPackage)
+  };
+}
+
+async function runAutomation() {
+  const refreshResult = await refreshPackages();
+  const notifyResult = await notifyReadyForPickup();
+  return {
+    ...refreshResult,
+    notifiedReadyForPickup: notifyResult.notifiedReadyForPickup,
+    notifications: notifyResult.notifications,
+    packages: notifyResult.packages
   };
 }
 
@@ -747,6 +748,21 @@ async function handleApi(req, res, pathname) {
 
   if (req.method === "POST" && pathname === "/api/notify") {
     sendJson(res, 200, await notifyReadyForPickup());
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/notify/email") {
+    sendJson(res, 200, await notifyReadyForPickup([sendResendEmail]));
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/notify/sms") {
+    sendJson(res, 200, await notifyReadyForPickup([sendTwilioSms]));
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/automation") {
+    sendJson(res, 200, await runAutomation());
     return;
   }
 
