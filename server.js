@@ -822,7 +822,8 @@ async function serveStatic(res, pathname) {
   const pageAliases = {
     "/": "index.html",
     "/privacy": "privacy.html",
-    "/terms": "terms.html"
+    "/terms": "terms.html",
+    "/tiktok-compliance": "tiktok-compliance.html"
   };
   const filePath = join(publicDir, pageAliases[pathname] || pathname);
   const resolved = resolve(filePath);

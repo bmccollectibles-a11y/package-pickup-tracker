@@ -97,6 +97,29 @@ main {
   font-weight: 800;
 }
 
+.policy-page address {
+  margin-top: 8px;
+  color: var(--muted);
+  font-style: normal;
+  line-height: 1.6;
+}
+
+.policy-page ul {
+  margin: 12px 0 0;
+  padding-left: 22px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.policy-page li + li {
+  margin-top: 8px;
+}
+
+.compliance-page {
+  margin-top: 32px;
+  margin-bottom: 56px;
+}
+
 .updated {
   margin-top: 0;
 }
