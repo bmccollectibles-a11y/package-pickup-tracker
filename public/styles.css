@@ -179,6 +179,25 @@ main {
   gap: 10px;
 }
 
+.optional-details {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fbfcfa;
+}
+
+.optional-details summary {
+  cursor: pointer;
+  padding: 10px 12px;
+  color: #4b5549;
+  font-weight: 800;
+}
+
+.optional-detail-fields {
+  display: grid;
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+
 .dialog-actions {
   display: flex;
   justify-content: flex-end;

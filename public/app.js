@@ -199,9 +199,6 @@ function trackingMarkup(pkg) {
       <div class="edit-row">
         <input class="description-input" data-description-input="${pkg.id}" value="${escapeAttr(pkg.description || "")}" placeholder="Description">
         <input class="seller-input" data-seller-input="${pkg.id}" value="${escapeAttr(pkg.seller || "")}" placeholder="Seller (optional)">
-        <select class="carrier-input" data-carrier-input="${pkg.id}" aria-label="Carrier">
-          ${carrierOptionMarkup(pkg.carrier || "auto")}
-        </select>
         <button class="secondary compact" data-save-description="${pkg.id}">Save</button>
         <button class="secondary compact" data-cancel-edit="${pkg.id}">Cancel</button>
       </div>
@@ -553,14 +550,12 @@ rows.addEventListener("click", async (event) => {
     const id = saveButton.dataset.saveDescription;
     const input = rows.querySelector(`[data-description-input="${id}"]`);
     const sellerInput = rows.querySelector(`[data-seller-input="${id}"]`);
-    const carrierInput = rows.querySelector(`[data-carrier-input="${id}"]`);
     try {
       await api(`/api/packages/${id}`, {
         method: "PATCH",
         body: JSON.stringify({
           description: input?.value || "",
-          seller: sellerInput?.value || "",
-          carrier: carrierInput?.value || "auto"
+          seller: sellerInput?.value || ""
         })
       });
       editingId = null;
