@@ -285,7 +285,8 @@ input:focus {
 }
 
 .primary:disabled,
-.secondary:disabled {
+.secondary:disabled,
+.settings-button:disabled {
   cursor: not-allowed;
   opacity: 0.65;
 }
@@ -473,6 +474,23 @@ tr:last-child td {
   cursor: pointer;
   padding: 9px 12px;
   font-weight: 800;
+}
+
+.settings-button {
+  min-height: 36px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: #eef2eb;
+  color: #4b5549;
+  cursor: pointer;
+  padding: 7px 11px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.settings-button:hover {
+  background: #e4eadf;
+  color: var(--ink);
 }
 
 .danger {
