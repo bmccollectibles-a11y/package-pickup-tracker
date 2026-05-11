@@ -163,7 +163,7 @@ function cleanCarrierStatus(status, carrierStatus) {
   if (status === "picked_up") return "Received";
   if (status === "arrived" || lower.includes("delivered")) return "Delivered";
   if (status === "out_for_delivery") return "Out for Delivery";
-  if (status === "in_transit") return "In Transit";
+  if (status === "in_transit") return value || "In Transit";
   return value;
 }
 
@@ -195,34 +195,132 @@ function shippoCarrierForTrackingNumber(trackingNumber, carrier) {
   return trackingNumber.startsWith("SHIPPO_") ? "shippo" : carrier;
 }
 
+function substatusValue(substatus, key) {
+  if (!substatus) return "";
+  if (typeof substatus === "string") return key === "code" ? substatus : "";
+  return substatus[key] || "";
+}
+
+function statusTextParts(event) {
+  if (!event) return [];
+  if (typeof event === "string") return [event];
+  return [
+    event.status,
+    event.status_details,
+    event.message,
+    event.description,
+    event.carrier_status,
+    event.carrier_status_description,
+    substatusValue(event.substatus, "code"),
+    substatusValue(event.substatus, "text"),
+    substatusValue(event.substatus, "description")
+  ].filter(Boolean);
+}
+
+function eventDetails(event) {
+  if (!event || typeof event === "string") return event || "";
+  return firstValue(
+    event.status_details,
+    event.message,
+    substatusValue(event.substatus, "text"),
+    substatusValue(event.substatus, "description"),
+    event.carrier_status_description,
+    event.description,
+    event.status,
+    event.carrier_status
+  );
+}
+
+function eventTime(event) {
+  const time = new Date(event?.status_date || event?.object_updated || event?.object_created || 0).getTime();
+  return Number.isNaN(time) ? 0 : time;
+}
+
+function eventStatusTime(event) {
+  const time = new Date(event?.status_date || 0).getTime();
+  return Number.isNaN(time) ? 0 : time;
+}
+
+function latestTrackingHistoryEvent(payload) {
+  return Array.isArray(payload?.tracking_history)
+    ? [...payload.tracking_history].sort((a, b) => eventTime(b) - eventTime(a))[0]
+    : null;
+}
+
+function firstValue(...values) {
+  return values.find((value) => value !== undefined && value !== null && value !== "") || null;
+}
+
+function shippoEta(payload) {
+  return firstValue(
+    payload?.eta,
+    payload?.estimated_delivery_date,
+    payload?.estimated_delivery,
+    payload?.expected_delivery_date,
+    payload?.expected_delivery,
+    payload?.scheduled_delivery_date,
+    payload?.scheduled_delivery,
+    payload?.tracking_status?.eta,
+    payload?.tracking_status?.estimated_delivery_date,
+    payload?.tracking_status?.expected_delivery_date,
+    payload?.tracking_status?.scheduled_delivery_date
+  );
+}
+
+function shippoOriginalEta(payload) {
+  return firstValue(
+    payload?.original_eta,
+    payload?.original_estimated_delivery_date,
+    payload?.original_expected_delivery_date,
+    payload?.original_scheduled_delivery_date
+  );
+}
+
+function isOutForDeliveryText(value) {
+  const text = String(value || "").toLowerCase();
+  return (
+    text.includes("out_for_delivery") ||
+    text.includes("out for delivery") ||
+    text.includes("on vehicle for delivery") ||
+    text.includes("on fedex vehicle for delivery") ||
+    text.includes("loaded on delivery vehicle") ||
+    text.includes("with delivery courier") ||
+    text.includes("with delivery driver")
+  );
+}
+
 function interpretShippoTracking(payload) {
   const trackingStatus = payload?.tracking_status;
+  const latestHistory = latestTrackingHistoryEvent(payload);
   const status =
     typeof trackingStatus === "string"
       ? trackingStatus
       : trackingStatus?.status || payload?.status || payload?.object_state || "UNKNOWN";
   const substatus =
     typeof trackingStatus === "object" && trackingStatus
-      ? trackingStatus.substatus?.code || trackingStatus.substatus?.text || null
+      ? substatusValue(trackingStatus.substatus, "code") || substatusValue(trackingStatus.substatus, "text") || null
       : null;
-  const details =
-    typeof trackingStatus === "object" && trackingStatus
-      ? trackingStatus.status_details ||
-        trackingStatus.message ||
-        trackingStatus.substatus?.text ||
-        trackingStatus.status
-      : status;
+  const currentParts = statusTextParts(trackingStatus);
+  const latestParts =
+    latestHistory && (!eventStatusTime(trackingStatus) || eventStatusTime(latestHistory) >= eventStatusTime(trackingStatus))
+      ? statusTextParts(latestHistory)
+      : [];
+  const details = firstValue(
+    eventDetails(trackingStatus),
+    eventDetails(latestHistory),
+    status
+  );
   const normalizedStatus = String(status || "").toUpperCase();
-  const normalizedSubstatus = String(substatus || "").toLowerCase();
-  const normalizedDetails = String(details || "").toLowerCase();
-  const delivered = normalizedStatus === "DELIVERED" || normalizedDetails.includes("delivered");
-  const outForDelivery = normalizedSubstatus === "out_for_delivery" || normalizedDetails.includes("out for delivery");
+  const latestStatus = String(latestHistory?.status || "").toUpperCase();
+  const normalizedDetails = [...currentParts, ...latestParts].join(" ").toLowerCase();
+  const delivered = normalizedStatus === "DELIVERED" || latestStatus === "DELIVERED" || normalizedDetails.includes("delivered");
+  const outForDelivery = !delivered && [...currentParts, ...latestParts].some(isOutForDeliveryText);
 
   return {
     status: delivered ? "arrived" : outForDelivery ? "out_for_delivery" : "in_transit",
-    carrierStatus: delivered ? "Delivered" : outForDelivery ? "Out for Delivery" : "In Transit",
-    eta: payload?.eta || null,
-    originalEta: payload?.original_eta || null,
+    carrierStatus: delivered ? "Delivered" : outForDelivery ? "Out for Delivery" : details || "In Transit",
+    eta: shippoEta(payload),
+    originalEta: shippoOriginalEta(payload),
     trackingSubstatus: substatus || null,
     raw: payload
   };
