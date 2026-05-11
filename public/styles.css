@@ -347,6 +347,14 @@ tr:last-child td {
   letter-spacing: 0;
 }
 
+.tracking-block {
+  display: block;
+}
+
+.tracking-block .tracking {
+  display: block;
+}
+
 .carrier-badge {
   display: inline-flex;
   align-items: center;
@@ -661,10 +669,7 @@ tr:last-child td {
   }
 
   td:first-child {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    flex-wrap: wrap;
+    display: block;
     gap: 10px;
     padding: 14px 12px 12px;
     background: #fbfcfa;
@@ -696,18 +701,15 @@ tr:last-child td {
 
   td:first-child .tracking {
     display: block;
-    flex: 1 1 min(210px, 100%);
     font-size: 16px;
     line-height: 1.2;
   }
 
   td:first-child .carrier-badge {
-    flex: 0 0 auto;
-    margin-top: 0;
+    margin-top: 6px;
   }
 
   td:first-child .note {
-    flex-basis: 100%;
     margin-top: 4px;
   }
 

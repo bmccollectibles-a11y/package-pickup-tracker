@@ -198,8 +198,10 @@ function trackingMarkup(pkg) {
   }
 
   return `
-    <span class="tracking">${pkg.trackingNumber}</span>
-    <span class="carrier-badge">${packageCarrierLabel(pkg)}</span>
+    <span class="tracking-block">
+      <span class="tracking">${pkg.trackingNumber}</span>
+      <span class="carrier-badge">${packageCarrierLabel(pkg)}</span>
+    </span>
     ${pkg.description ? `<span class="note">${escapeHtml(pkg.description)}</span>` : ""}
   `;
 }
