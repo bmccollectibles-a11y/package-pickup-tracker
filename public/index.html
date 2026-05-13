@@ -93,12 +93,18 @@
       </section>
 
       <section class="toolbar">
-        <div class="tabs" role="tablist" aria-label="Package filters">
-          <button class="tab active" data-filter="active">Active</button>
-          <button class="tab" data-filter="needs_pickup">Needs pickup</button>
-          <button class="tab" data-filter="out_for_delivery">Out for delivery</button>
-          <button class="tab" data-filter="picked_up">Received</button>
-          <button class="tab" data-filter="all">All</button>
+        <div class="toolbar-controls">
+          <div class="tabs" role="tablist" aria-label="Package filters">
+            <button class="tab active" data-filter="active">Active</button>
+            <button class="tab" data-filter="needs_pickup">Needs pickup</button>
+            <button class="tab" data-filter="out_for_delivery">Out for delivery</button>
+            <button class="tab" data-filter="picked_up">Received</button>
+            <button class="tab" data-filter="all">All</button>
+          </div>
+          <label class="search-field">
+            <span>Search packages</span>
+            <input id="packageSearch" type="search" autocomplete="off" placeholder="Search tracking, product, seller, or notes">
+          </label>
         </div>
         <p id="statusMessage"></p>
       </section>

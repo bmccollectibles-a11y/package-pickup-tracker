@@ -17,6 +17,7 @@ const smsRecipientForm = document.querySelector("#smsRecipientForm");
 const recipientPhone = document.querySelector("#recipientPhone");
 const smsRecipientList = document.querySelector("#smsRecipientList");
 const recipientSource = document.querySelector("#recipientSource");
+const packageSearch = document.querySelector("#packageSearch");
 const tabs = [...document.querySelectorAll(".tab")];
 let packages = [];
 let emailRecipients = [];
@@ -27,6 +28,7 @@ let config = { smsEnabled: false, smsConfigured: false };
 let recipientAdminToken = window.sessionStorage.getItem("recipientAdminToken") || "";
 let recipientsLoaded = false;
 let filter = "active";
+let searchQuery = "";
 let editingId = null;
 
 function setMessage(message, isError = false) {
@@ -150,7 +152,22 @@ function sortActivePackages(items) {
   );
 }
 
-function visiblePackages() {
+function packageMatchesSearch(pkg) {
+  if (!searchQuery) return true;
+  const haystack = [
+    pkg.trackingNumber,
+    pkg.description,
+    pkg.seller,
+    pkg.receivedBy,
+    pkg.receivedNote,
+    pkg.carrierStatus,
+    packageCarrierLabel(pkg),
+    statusLabel(pkg.status)
+  ].join(" ").toLowerCase();
+  return haystack.includes(searchQuery);
+}
+
+function packagesForCurrentFilter() {
   if (filter === "needs_pickup") return sortActivePackages(packages.filter((pkg) => pkg.status === "arrived" && !pkg.pickedUpAt));
   if (filter === "out_for_delivery") return sortByEtaThenCreated(packages.filter((pkg) => pkg.status === "out_for_delivery" && !pkg.pickedUpAt));
   if (filter === "active") {
@@ -158,6 +175,10 @@ function visiblePackages() {
   }
   if (filter === "picked_up") return packages.filter((pkg) => pkg.pickedUpAt);
   return sortByEtaThenCreated(packages);
+}
+
+function visiblePackages() {
+  return packagesForCurrentFilter().filter(packageMatchesSearch);
 }
 
 function updateCounts() {
@@ -173,7 +194,7 @@ function render() {
   rows.innerHTML = "";
 
   if (!visible.length) {
-    rows.innerHTML = `<tr><td colspan="6" class="empty">No packages in this view.</td></tr>`;
+    rows.innerHTML = `<tr><td colspan="6" class="empty">${searchQuery ? "No packages match this search." : "No packages in this view."}</td></tr>`;
     return;
   }
 
@@ -703,6 +724,11 @@ for (const tab of tabs) {
     render();
   });
 }
+
+packageSearch.addEventListener("input", () => {
+  searchQuery = packageSearch.value.trim().toLowerCase();
+  render();
+});
 
 renderRecipients();
 Promise.all([loadConfig(), loadPackages()]).catch((error) => setMessage(error.message, true));

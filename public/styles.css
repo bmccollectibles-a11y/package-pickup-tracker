@@ -360,8 +360,15 @@ input:focus {
   display: flex;
   justify-content: space-between;
   gap: 16px;
-  align-items: center;
+  align-items: flex-start;
   margin: 8px 0 12px;
+}
+
+.toolbar-controls {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
 }
 
 .tabs {
@@ -380,6 +387,36 @@ input:focus {
 .tab.active {
   background: #1f2937;
   color: #fff;
+}
+
+.search-field {
+  position: relative;
+  display: block;
+  width: min(460px, 100%);
+}
+
+.search-field span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.search-field input {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #cdd5c9;
+  border-radius: 6px;
+  padding: 10px 12px;
+  color: var(--ink);
+  background: #fff;
+}
+
+.search-field input:focus {
+  border-color: var(--accent);
+  outline: 3px solid rgba(15, 118, 110, 0.16);
 }
 
 #statusMessage {
@@ -673,8 +710,18 @@ tr:last-child td {
   .password-form,
   .recipient-form,
   .dialog-actions,
+  .toolbar,
   .summary-grid {
     grid-template-columns: 1fr;
+  }
+
+  .toolbar {
+    display: grid;
+    gap: 10px;
+  }
+
+  .search-field {
+    width: 100%;
   }
 
   .dialog-actions {
