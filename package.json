@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "cron:refresh": "node scripts/cron-request.mjs /api/refresh",
+    "cron:email": "node scripts/cron-request.mjs /api/notify/email"
   },
   "dependencies": {},
   "engines": {
