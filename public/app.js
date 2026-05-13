@@ -99,6 +99,15 @@ function packageCarrierLabel(pkg) {
   return carrierLabel(pkg.carrier === "auto" ? pkg.resolvedCarrier : pkg.carrier);
 }
 
+function trackingUrl(pkg) {
+  const number = encodeURIComponent(pkg.trackingNumber);
+  const carrier = pkg.carrier === "auto" ? pkg.resolvedCarrier : pkg.carrier;
+  if (carrier === "ups") return `https://www.ups.com/track?track=yes&trackNums=${number}`;
+  if (carrier === "fedex") return `https://www.fedex.com/fedextrack/?trknbr=${number}`;
+  if (carrier === "usps") return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${number}`;
+  return "";
+}
+
 function etaSortValue(pkg) {
   if (!pkg.eta) return Number.MAX_SAFE_INTEGER;
   const time = new Date(pkg.eta).getTime();
@@ -192,9 +201,14 @@ function etaMarkup(pkg) {
 }
 
 function trackingMarkup(pkg) {
+  const url = trackingUrl(pkg);
+  const trackingNumberMarkup = url
+    ? `<a class="tracking tracking-link" href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer">${pkg.trackingNumber}</a>`
+    : `<span class="tracking">${pkg.trackingNumber}</span>`;
+
   if (editingId === pkg.id) {
     return `
-      <span class="tracking">${pkg.trackingNumber}</span>
+      ${trackingNumberMarkup}
       <div class="edit-row">
         <input class="description-input" data-description-input="${pkg.id}" value="${escapeAttr(pkg.description || "")}" placeholder="Description">
         <input class="seller-input" data-seller-input="${pkg.id}" value="${escapeAttr(pkg.seller || "")}" placeholder="Seller (optional)">
@@ -210,7 +224,7 @@ function trackingMarkup(pkg) {
 
   return `
     <span class="tracking-block">
-      <span class="tracking">${pkg.trackingNumber}</span>
+      ${trackingNumberMarkup}
       <span class="carrier-badge">${packageCarrierLabel(pkg)}</span>
     </span>
     ${pkg.seller ? `<span class="note">Seller: ${escapeHtml(pkg.seller)}</span>` : ""}

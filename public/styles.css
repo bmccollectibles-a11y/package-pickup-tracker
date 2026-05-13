@@ -420,6 +420,18 @@ tr:last-child td {
   letter-spacing: 0;
 }
 
+.tracking-link {
+  color: inherit;
+  text-decoration: none;
+  text-underline-offset: 3px;
+}
+
+.tracking-link:hover,
+.tracking-link:focus-visible {
+  color: var(--accent-dark);
+  text-decoration: underline;
+}
+
 .tracking-block {
   display: block;
 }
