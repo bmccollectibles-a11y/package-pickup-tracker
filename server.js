@@ -22,6 +22,9 @@ const contentTypes = {
   ".css": "text/css; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
+  ".jpeg": "image/jpeg",
+  ".jpg": "image/jpeg",
+  ".png": "image/png",
   ".svg": "image/svg+xml"
 };
 
@@ -1040,7 +1043,9 @@ async function serveStatic(res, pathname) {
   const pageAliases = {
     "/": "index.html",
     "/privacy": "privacy.html",
+    "/privacy-policy": "privacy.html",
     "/terms": "terms.html",
+    "/terms-and-conditions": "terms.html",
     "/tiktok-compliance": "tiktok-compliance.html"
   };
   const filePath = join(publicDir, pageAliases[pathname] || pathname);
