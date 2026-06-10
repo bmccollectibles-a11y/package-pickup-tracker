@@ -20,7 +20,7 @@ SHIPPO_CARRIER=ups
 SHIPPO_TIMEOUT_MS=20000
 ```
 
-Each package can be saved with Auto carrier, UPS, FedEx, or USPS. Auto carrier detects common UPS, USPS, and FedEx tracking number formats, then falls back to `SHIPPO_CARRIER` when the format is ambiguous. Shippo test keys work with Shippo mock tracking numbers such as `SHIPPO_DELIVERED` and `SHIPPO_TRANSIT`.
+Each package can be saved with Auto carrier, UPS, FedEx, USPS, DHL Express, or DHL eCommerce. Auto carrier detects common UPS, USPS, FedEx, DHL Express, and DHL eCommerce tracking number formats, then falls back to `SHIPPO_CARRIER` when the format is ambiguous. Shippo test keys work with Shippo mock tracking numbers such as `SHIPPO_DELIVERED` and `SHIPPO_TRANSIT`.
 
 The app stores carrier ETA when Shippo provides it, preserves carrier status details, and detects out-for-delivery from Shippo substatus, carrier detail text, and the latest tracking history event.
 

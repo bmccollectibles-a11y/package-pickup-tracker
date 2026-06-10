@@ -93,7 +93,9 @@ function carrierLabel(carrier) {
     auto: "Carrier",
     ups: "UPS",
     fedex: "FedEx",
-    usps: "USPS"
+    usps: "USPS",
+    dhl_express: "DHL Express",
+    dhl_ecommerce: "DHL eCommerce"
   }[carrier] || carrier || "Carrier";
 }
 
@@ -107,6 +109,7 @@ function trackingUrl(pkg) {
   if (carrier === "ups") return `https://www.ups.com/track?track=yes&trackNums=${number}`;
   if (carrier === "fedex") return `https://www.fedex.com/fedextrack/?trknbr=${number}`;
   if (carrier === "usps") return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${number}`;
+  if (carrier === "dhl_express" || carrier === "dhl_ecommerce") return `https://www.dhl.com/us-en/home/tracking.html?tracking-id=${number}`;
   return "";
 }
 
@@ -254,7 +257,7 @@ function trackingMarkup(pkg) {
 }
 
 function carrierOptionMarkup(selectedCarrier) {
-  return ["auto", "ups", "fedex", "usps"]
+  return ["auto", "ups", "fedex", "usps", "dhl_express", "dhl_ecommerce"]
     .map((carrier) => `<option value="${carrier}"${carrier === selectedCarrier ? " selected" : ""}>${carrierLabel(carrier)}</option>`)
     .join("");
 }

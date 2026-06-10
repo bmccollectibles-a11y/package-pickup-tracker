@@ -147,8 +147,9 @@ function normalizePhoneNumbers(input) {
 function normalizeCarrier(value) {
   const carrier = String(value || "").trim().toLowerCase();
   if (!carrier || carrier === "auto") return "auto";
-  if (["ups", "fedex", "usps"].includes(carrier)) return carrier;
-  throw new Error("Carrier must be UPS, FedEx, USPS, or Auto.");
+  if (carrier === "dhl") return "dhl_express";
+  if (["ups", "fedex", "usps", "dhl_express", "dhl_ecommerce"].includes(carrier)) return carrier;
+  throw new Error("Carrier must be UPS, FedEx, USPS, DHL Express, DHL eCommerce, or Auto.");
 }
 
 function detectCarrier(trackingNumber) {
@@ -157,6 +158,8 @@ function detectCarrier(trackingNumber) {
   if (normalized.startsWith("1Z")) return "ups";
   if (/^(92|93|94|95|96)\d{18,32}$/.test(digitsOnly)) return "usps";
   if (/^\d{12}$|^\d{15}$|^\d{20}$|^\d{22}$/.test(digitsOnly)) return "fedex";
+  if (/^\d{10}$/.test(digitsOnly) || /^JD[A-Z0-9]{10,30}$/.test(normalized)) return "dhl_express";
+  if (/^GM\d{16,34}$/.test(normalized) || /^LX\d{9}US$/.test(normalized)) return "dhl_ecommerce";
   return shippoCarrier;
 }
 
