@@ -18,7 +18,11 @@ const recipientPhone = document.querySelector("#recipientPhone");
 const smsRecipientList = document.querySelector("#smsRecipientList");
 const recipientSource = document.querySelector("#recipientSource");
 const packageSearch = document.querySelector("#packageSearch");
+const receivedPagination = document.querySelector("#receivedPagination");
+const receivedPaginationSummary = document.querySelector("#receivedPaginationSummary");
+const showMoreReceived = document.querySelector("#showMoreReceived");
 const tabs = [...document.querySelectorAll(".tab")];
+const RECEIVED_PAGE_SIZE = 25;
 let packages = [];
 let emailRecipients = [];
 let smsRecipients = [];
@@ -29,6 +33,7 @@ let recipientAdminToken = window.sessionStorage.getItem("recipientAdminToken") |
 let recipientsLoaded = false;
 let filter = "active";
 let searchQuery = "";
+let receivedVisibleCount = RECEIVED_PAGE_SIZE;
 let editingId = null;
 
 function setMessage(message, isError = false) {
@@ -155,6 +160,15 @@ function sortActivePackages(items) {
   );
 }
 
+function sortReceivedPackages(items) {
+  return [...items].sort(
+    (a, b) =>
+      dateSortValue(b.pickedUpAt || b.arrivedAt || b.lastCheckedAt || b.createdAt) -
+        dateSortValue(a.pickedUpAt || a.arrivedAt || a.lastCheckedAt || a.createdAt) ||
+      dateSortValue(b.createdAt) - dateSortValue(a.createdAt)
+  );
+}
+
 function packageMatchesSearch(pkg) {
   if (!searchQuery) return true;
   const haystack = [
@@ -176,12 +190,16 @@ function packagesForCurrentFilter() {
   if (filter === "active") {
     return sortActivePackages(packages.filter((pkg) => !pkg.pickedUpAt));
   }
-  if (filter === "picked_up") return packages.filter((pkg) => pkg.pickedUpAt);
+  if (filter === "picked_up") return sortReceivedPackages(packages.filter((pkg) => pkg.pickedUpAt));
   return sortByEtaThenCreated(packages);
 }
 
 function visiblePackages() {
   return packagesForCurrentFilter().filter(packageMatchesSearch);
+}
+
+function paginatedPackages(items) {
+  return filter === "picked_up" ? items.slice(0, receivedVisibleCount) : items;
 }
 
 function updateCounts() {
@@ -193,8 +211,10 @@ function updateCounts() {
 
 function render() {
   updateCounts();
-  const visible = visiblePackages();
+  const matching = visiblePackages();
+  const visible = paginatedPackages(matching);
   rows.innerHTML = "";
+  renderReceivedPagination(matching.length, visible.length);
 
   if (!visible.length) {
     rows.innerHTML = `<tr><td colspan="6" class="empty">${searchQuery ? "No packages match this search." : "No packages in this view."}</td></tr>`;
@@ -214,6 +234,17 @@ function render() {
     `;
     rows.appendChild(tr);
   }
+}
+
+function renderReceivedPagination(totalCount, visibleCount) {
+  if (filter !== "picked_up" || totalCount <= RECEIVED_PAGE_SIZE) {
+    receivedPagination.hidden = true;
+    return;
+  }
+
+  receivedPagination.hidden = false;
+  receivedPaginationSummary.textContent = `Showing ${visibleCount} of ${totalCount} received packages`;
+  showMoreReceived.hidden = visibleCount >= totalCount;
 }
 
 function etaMarkup(pkg) {
@@ -723,6 +754,7 @@ rows.addEventListener("click", async (event) => {
 for (const tab of tabs) {
   tab.addEventListener("click", () => {
     filter = tab.dataset.filter;
+    receivedVisibleCount = RECEIVED_PAGE_SIZE;
     tabs.forEach((item) => item.classList.toggle("active", item === tab));
     render();
   });
@@ -730,6 +762,12 @@ for (const tab of tabs) {
 
 packageSearch.addEventListener("input", () => {
   searchQuery = packageSearch.value.trim().toLowerCase();
+  receivedVisibleCount = RECEIVED_PAGE_SIZE;
+  render();
+});
+
+showMoreReceived.addEventListener("click", () => {
+  receivedVisibleCount += RECEIVED_PAGE_SIZE;
   render();
 });
 
